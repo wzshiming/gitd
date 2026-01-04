@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -67,7 +68,7 @@ func TestDaemonServer(t *testing.T) {
 	defer os.RemoveAll(cloneDir)
 
 	// Clone the repo using binary git via git:// protocol
-	repoURL := "git://localhost:" + string(rune(port)) + "/test.git"
+	repoURL := fmt.Sprintf("git://localhost:%d/test.git", port)
 	_ = repoURL // The git protocol test requires a bit more setup
 
 	// For now just verify the server started successfully

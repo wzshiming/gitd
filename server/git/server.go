@@ -126,19 +126,17 @@ func (s *Server) Close() error {
 	s.inShutdown.Store(true)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	err := s.closeListenersLocked()
-
-	// We need to unlock the mutex while waiting for listenersGroup.
 	s.mu.Unlock()
-	s.listenerGroup.Wait()
-	s.mu.Lock()
 
+	s.listenerGroup.Wait()
+
+	s.mu.Lock()
 	for c := range s.activeConn {
 		c.Close()
 		delete(s.activeConn, c)
 	}
+	s.mu.Unlock()
 
 	return err
 }
@@ -337,9 +335,9 @@ type conn struct {
 	// protocol messages.
 	net.Conn
 
-	// unix timestamp in seconds when the connection was established
+	// unixSec is the unix timestamp in seconds when the connection was established.
 	unixSec atomic.Uint64
-	// s the server that is handling this connection.
+	// s is the server that is handling this connection.
 	s *Server
 }
 
