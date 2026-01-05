@@ -147,7 +147,7 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", service))
 	w.Header().Set("Cache-Control", "no-cache")
 
-	var body io.Reader = r.Body
+	var body io.ReadCloser = r.Body
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		var err error
 		body, err = gzip.NewReader(r.Body)
@@ -155,6 +155,7 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 			http.Error(w, "Failed to decompress request body", http.StatusBadRequest)
 			return
 		}
+		defer body.Close()
 	}
 
 	cmd := exec.Command(h.gitPath(), service, "--stateless-rpc", repoPath)
@@ -179,7 +180,7 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 	// Construct the full path
 	fullPath := filepath.Join(h.RepoDir, urlPath)
 
-	// Clean and verify the path is within RepoDir
+	// Clean and verify the path is within RepoDir using filepath.Rel
 	fullPath = filepath.Clean(fullPath)
 	absRepoDir, err := filepath.Abs(h.RepoDir)
 	if err != nil {
@@ -189,7 +190,13 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 	if err != nil {
 		return ""
 	}
-	if !strings.HasPrefix(absFullPath, absRepoDir) {
+	// Use filepath.Rel to safely check if absFullPath is within absRepoDir
+	relPath, err := filepath.Rel(absRepoDir, absFullPath)
+	if err != nil {
+		return ""
+	}
+	// Reject if the relative path starts with ".." (meaning it's outside RepoDir)
+	if strings.HasPrefix(relPath, "..") {
 		return ""
 	}
 
