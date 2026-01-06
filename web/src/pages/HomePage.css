@@ -1,0 +1,94 @@
+.home-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  padding: 16px 0;
+  border-bottom: 1px solid #d0d7de;
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 24px;
+  color: #24292f;
+}
+
+.logo {
+  font-size: 28px;
+}
+
+.main-content h2 {
+  font-size: 20px;
+  color: #24292f;
+  margin-bottom: 16px;
+}
+
+.no-repos {
+  color: #656d76;
+  font-size: 14px;
+}
+
+.repo-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.repo-item {
+  border-bottom: 1px solid #d0d7de;
+}
+
+.repo-item:last-child {
+  border-bottom: none;
+}
+
+.repo-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  text-decoration: none;
+  color: #0969da;
+  transition: background-color 0.2s;
+}
+
+.repo-link:hover {
+  background-color: #f6f8fa;
+}
+
+.repo-icon {
+  font-size: 20px;
+}
+
+.repo-full-name {
+  font-size: 16px;
+}
+
+.repo-full-name strong {
+  font-weight: 600;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: #656d76;
+}
+
+.error {
+  color: #cf222e;
+  padding: 16px;
+  background-color: #ffebe9;
+  border: 1px solid #ff8182;
+  border-radius: 6px;
+  margin: 20px;
+}
