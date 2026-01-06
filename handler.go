@@ -61,6 +61,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) router() *mux.Router {
 	r := mux.NewRouter()
 
+	// Repository import endpoints (more specific routes first)
+	h.registryImport(r)
+
 	// Repository management endpoints
 	h.registryManagement(r)
 
