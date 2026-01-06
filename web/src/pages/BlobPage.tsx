@@ -122,10 +122,6 @@ export function BlobPage() {
     <div className="blob-page">
       <header className="repo-header">
         <Link to="/" className="home-link">🗂️ gitd</Link>
-        <span className="separator">/</span>
-        <Link to={`/${repoName}`} className="repo-name-link">
-          <strong>{repoName}</strong>
-        </Link>
       </header>
       
       <div className="repo-toolbar">
