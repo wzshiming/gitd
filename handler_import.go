@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,7 +64,7 @@ func (s *importStore) delete(repo string) {
 
 func (h *Handler) registryImport(r *mux.Router) {
 	r.HandleFunc("/api/repositories/{repo:.+}/import", h.requireAuth(h.handleImportRepository)).Methods(http.MethodPost)
-	r.HandleFunc("/api/repositories/{repo:.+}/import/status", h.handleImportStatus).Methods(http.MethodGet)
+	r.HandleFunc("/api/repositories/{repo:.+}/import/status", h.requireAuth(h.handleImportStatus)).Methods(http.MethodGet)
 }
 
 // handleImportRepository handles the import repository request
@@ -263,8 +264,7 @@ func (h *Handler) getRemoteDefaultBranch(sourceURL string) (string, error) {
 
 	// Parse output to find the default branch
 	// Format: ref: refs/heads/main	HEAD
-	lines := string(output)
-	for _, line := range splitLines(lines) {
+	for _, line := range strings.Split(string(output), "\n") {
 		if len(line) > 5 && line[:5] == "ref: " {
 			// Extract the ref part after "ref: "
 			remaining := line[5:]
@@ -370,42 +370,4 @@ func (h *Handler) finalizeImport(repoPath, defaultBranch string) error {
 	cmd = exec.Command("git", "update-server-info")
 	cmd.Dir = repoPath
 	return cmd.Run()
-}
-
-// splitLines splits a string into lines
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
-// splitFields splits a string into fields by whitespace
-func splitFields(s string) []string {
-	var fields []string
-	start := -1
-	for i := 0; i < len(s); i++ {
-		if s[i] == ' ' || s[i] == '\t' {
-			if start >= 0 {
-				fields = append(fields, s[start:i])
-				start = -1
-			}
-		} else {
-			if start < 0 {
-				start = i
-			}
-		}
-	}
-	if start >= 0 {
-		fields = append(fields, s[start:])
-	}
-	return fields
 }
