@@ -10,8 +10,8 @@ import (
 )
 
 func (h *Handler) registryManagement(r *mux.Router) {
-	r.HandleFunc("/apis/repositories/{repo:.+}", h.requireAuth(h.handleCreateRepository)).Methods(http.MethodPost)
-	r.HandleFunc("/apis/repositories/{repo:.+}", h.requireAuth(h.handleDeleteRepository)).Methods(http.MethodDelete)
+	r.HandleFunc("/api/repositories/{repo:.+}", h.requireAuth(h.handleCreateRepository)).Methods(http.MethodPost)
+	r.HandleFunc("/api/repositories/{repo:.+}", h.requireAuth(h.handleDeleteRepository)).Methods(http.MethodDelete)
 }
 
 func (h *Handler) handleCreateRepository(w http.ResponseWriter, r *http.Request) {
