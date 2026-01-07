@@ -1,6 +1,7 @@
 package gitd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -99,6 +100,8 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 }
 
 // resolveRepoPath resolves and validates a repository path.
+// If lazy mirroring is enabled and the repository doesn't exist locally,
+// it will attempt to create it as a mirror from the upstream source.
 func (h *Handler) resolveRepoPath(urlPath string) string {
 	// Clean the path
 	urlPath = strings.TrimPrefix(urlPath, "/")
@@ -140,7 +143,73 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 		return gitPath
 	}
 
+	// If lazy mirror is enabled, try to create the repository on-demand
+	if h.lazyMirrorSource != nil {
+		repoPath := h.tryLazyMirror(urlPath)
+		if repoPath != "" {
+			return repoPath
+		}
+	}
+
 	return ""
+}
+
+// tryLazyMirror attempts to create a lazy mirror repository for the given path.
+// It returns the repository path if successful, or empty string if the mirror cannot be created.
+func (h *Handler) tryLazyMirror(urlPath string) string {
+	// Determine the repository name (strip .git suffix if present)
+	repoName := strings.TrimSuffix(urlPath, ".git")
+
+	// Ask the lazy mirror source function for the upstream URL
+	upstreamURL := h.lazyMirrorSource(repoName)
+	if upstreamURL == "" {
+		return ""
+	}
+
+	// Validate and construct the repository path
+	repoPath, err := h.validateRepoPath(repoName)
+	if err != nil {
+		return ""
+	}
+
+	ctx := context.Background()
+
+	// Create the bare repository
+	if err := h.createBareRepo(ctx, repoPath); err != nil {
+		// Repository might already be being created by another request
+		if isGitRepository(repoPath) {
+			return repoPath
+		}
+		return ""
+	}
+
+	// Configure it as a mirror
+	if err := h.saveMirrorConfig(ctx, repoPath, upstreamURL); err != nil {
+		return ""
+	}
+
+	// Try to get the default branch and set it
+	defaultBranch, err := h.getRemoteDefaultBranch(ctx, upstreamURL)
+	if err != nil {
+		defaultBranch = "main" // Fallback to main
+	}
+	_ = h.setLocalDefaultBranch(ctx, repoPath, defaultBranch)
+
+	// Initialize import status
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "starting lazy mirror",
+	})
+
+	// Start the import in the background
+	go func() {
+		err := h.doImportWithStatus(context.Background(), repoPath, repoName, defaultBranch)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Lazy mirror import failed for %s: %v\n", repoName, err)
+		}
+	}()
+
+	return repoPath
 }
 
 // isGitRepository checks if the given path is a git repository.
