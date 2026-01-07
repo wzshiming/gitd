@@ -29,22 +29,25 @@ export interface Branch {
   current: boolean;
 }
 
-export interface RepoInfo {
+export interface Repository {
   name: string;
+  is_mirror?: boolean;
   default_branch: string;
   description: string;
 }
 
-export interface RepoListItem {
+export interface RepositoryItem {
   name: string;
+  is_mirror?: boolean;
 }
 
 const API_BASE = '/api';
 
 export async function fetchTree(repo: string, ref: string, path: string = ''): Promise<TreeEntry[]> {
+  repo = correctRepoName(repo);
   const url = path 
-    ? `${API_BASE}/${repo}/tree/${ref}/${path}`
-    : `${API_BASE}/${repo}/tree/${ref}`;
+    ? `${API_BASE}/repositories/${repo}/tree/${ref}/${path}`
+    : `${API_BASE}/repositories/${repo}/tree/${ref}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error('Failed to fetch tree');
@@ -53,7 +56,8 @@ export async function fetchTree(repo: string, ref: string, path: string = ''): P
 }
 
 export async function fetchBlob(repo: string, ref: string, path: string): Promise<BlobContent> {
-  const response = await fetch(`${API_BASE}/${repo}/blob/${ref}/${path}`);
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}/blob/${ref}/${path}`);
   if (!response.ok) {
     throw new Error('Failed to fetch blob');
   }
@@ -64,7 +68,8 @@ export async function fetchBlob(repo: string, ref: string, path: string): Promis
 }
 
 export async function fetchCommits(repo: string, ref: string): Promise<Commit[]> {
-  const response = await fetch(`${API_BASE}/${repo}/commits/${ref}`);
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}/commits/${ref}`);
   if (!response.ok) {
     throw new Error('Failed to fetch commits');
   }
@@ -72,25 +77,85 @@ export async function fetchCommits(repo: string, ref: string): Promise<Commit[]>
 }
 
 export async function fetchBranches(repo: string): Promise<Branch[]> {
-  const response = await fetch(`${API_BASE}/${repo}/branches`);
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}/branches`);
   if (!response.ok) {
     throw new Error('Failed to fetch branches');
   }
   return response.json();
 }
 
-export async function fetchRepoInfo(repo: string): Promise<RepoInfo> {
-  const response = await fetch(`${API_BASE}/${repo}`);
+export async function fetchRepoInfo(repo: string): Promise<Repository> {
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}`);
   if (!response.ok) {
     throw new Error('Failed to fetch repo info');
   }
   return response.json();
 }
 
-export async function fetchRepos(): Promise<RepoListItem[]> {
-  const response = await fetch(`${API_BASE}/repos`);
+export async function fetchRepositories(): Promise<RepositoryItem[]> {
+  const response = await fetch(`${API_BASE}/repositories`);
   if (!response.ok) {
-    throw new Error('Failed to fetch repos');
+    throw new Error('Failed to fetch repositories');
   }
   return response.json();
+}
+
+export interface ImportStatus {
+  status: string;
+  step: string;
+  error?: string;
+}
+
+export async function createRepository(repo: string): Promise<void> {
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to create repository');
+  }
+}
+
+export async function deleteRepository(repo: string): Promise<void> {
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to delete repository');
+  }
+}
+
+export async function importRepository(repo: string, sourceUrl: string): Promise<void> {
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ source_url: sourceUrl }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to start import');
+  }
+}
+
+export async function syncRepository(repo: string): Promise<void> {
+  repo = correctRepoName(repo);
+  const response = await fetch(`${API_BASE}/repositories/${repo}/sync`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to start sync');
+  }
+}
+
+function correctRepoName(repo: string): string {
+  return repo.endsWith('.git') ? repo : `${repo}.git`;
 }

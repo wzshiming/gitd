@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { fetchTree, fetchBranches, fetchCommits, fetchBlob, fetchRepoInfo } from '../api/client';
-import type { TreeEntry, Branch, Commit, RepoInfo } from '../api/client';
+import type { TreeEntry, Branch, Commit, Repository } from '../api/client';
 import { FileTree } from '../components/FileTree';
 import { BranchSelector } from '../components/BranchSelector';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -11,7 +11,7 @@ import { findBranchInPath } from '../utils/branchUtils';
 import './RepoPage.css';
 
 interface FetchState {
-  repoInfo: RepoInfo | null;
+  repoInfo: Repository | null;
   branches: Branch[];
   entries: TreeEntry[];
   commits: Commit[];
