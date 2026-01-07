@@ -115,7 +115,7 @@ func (h *Handler) handleTree(w http.ResponseWriter, r *http.Request) {
 	if ref == "" {
 		// Use default branch
 		base, dir := filepath.Split(repoPath)
-		cmd := exec.CommandContext(r.Context(), "git", "symbolic-ref", "--short", "HEAD")
+		cmd := command(r.Context(), "git", "symbolic-ref", "--short", "HEAD")
 		cmd.Dir = filepath.Join(base, dir)
 		output, err := cmd.Output()
 		if err == nil {
@@ -133,7 +133,7 @@ func (h *Handler) handleTree(w http.ResponseWriter, r *http.Request) {
 		treePath = ref + ":" + path
 	}
 
-	cmd := exec.CommandContext(r.Context(),
+	cmd := command(r.Context(),
 		"git", "ls-tree", treePath)
 	cmd.Dir = filepath.Join(base, dir)
 
@@ -150,7 +150,7 @@ func (h *Handler) handleTree(w http.ResponseWriter, r *http.Request) {
 
 	entries := parseTreeOutput(string(output), path)
 
-	cmd = exec.CommandContext(r.Context(),
+	cmd = command(r.Context(),
 		"git", "lfs", "ls-files", "--long", treePath)
 	cmd.Dir = filepath.Join(base, dir)
 	cmd.Stderr = os.Stderr
@@ -265,7 +265,7 @@ func (h *Handler) handleBlob(w http.ResponseWriter, r *http.Request) {
 
 	base, dir := filepath.Split(repoPath)
 
-	cmd := exec.CommandContext(r.Context(),
+	cmd := command(r.Context(),
 		"git", "show", ref+":"+path)
 	cmd.Dir = filepath.Join(base, dir)
 	cmd.Stdout = w
@@ -313,7 +313,7 @@ func (h *Handler) handleCommits(w http.ResponseWriter, r *http.Request) {
 	if ref == "" {
 		// Use default branch
 		base, dir := filepath.Split(repoPath)
-		cmd := exec.CommandContext(r.Context(), "git", "symbolic-ref", "--short", "HEAD")
+		cmd := command(r.Context(), "git", "symbolic-ref", "--short", "HEAD")
 		cmd.Dir = filepath.Join(base, dir)
 		output, err := cmd.Output()
 		if err == nil {
@@ -325,7 +325,7 @@ func (h *Handler) handleCommits(w http.ResponseWriter, r *http.Request) {
 
 	base, dir := filepath.Split(repoPath)
 
-	cmd := exec.CommandContext(r.Context(),
+	cmd := command(r.Context(),
 		"git", "log", "--format=%H|%s|%an|%ae|%ai", "-n", "20", ref)
 	cmd.Dir = filepath.Join(base, dir)
 
@@ -393,7 +393,7 @@ func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {
 
 	base, dir := filepath.Split(repoPath)
 
-	cmd := exec.CommandContext(r.Context(),
+	cmd := command(r.Context(),
 		"git", "branch", "-a")
 	cmd.Dir = filepath.Join(base, dir)
 
@@ -404,6 +404,22 @@ func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	branches := parseBranchesOutput(string(output))
+
+	if len(branches) == 0 {
+		// Extract the default branch using git symbolic-ref HEAD
+		cmd = command(r.Context(),
+			"git", "symbolic-ref", "--short", "HEAD")
+		cmd.Dir = filepath.Join(base, dir)
+
+		output, err = cmd.Output()
+		if err == nil {
+			defaultBranch := strings.TrimSpace(string(output))
+			branches = append(branches, Branch{
+				Name:    defaultBranch,
+				Current: true,
+			})
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(branches)
@@ -459,7 +475,7 @@ func (h *Handler) handleRepoInfo(w http.ResponseWriter, r *http.Request) {
 	base, dir := filepath.Split(repoPath)
 
 	// Get the default branch
-	cmd := exec.CommandContext(r.Context(),
+	cmd := command(r.Context(),
 		"git", "symbolic-ref", "--short", "HEAD")
 	cmd.Dir = filepath.Join(base, dir)
 
@@ -481,7 +497,8 @@ func (h *Handler) handleRepoInfo(w http.ResponseWriter, r *http.Request) {
 
 // RepoListItem represents a repository in the list
 type RepoListItem struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	IsMirror bool   `json:"is_mirror"`
 }
 
 // handleListRepos handles requests to list all repositories
@@ -499,8 +516,13 @@ func (h *Handler) handleListRepos(w http.ResponseWriter, r *http.Request) {
 		if isGitRepository(path) {
 			rel, _ := filepath.Rel(h.rootDir, path)
 			name := strings.TrimSuffix(rel, ".git")
+
+			// Check if this is a mirror repository
+			_, isMirror, _ := h.getMirrorInfo(path)
+
 			repos = append(repos, RepoListItem{
-				Name: name,
+				Name:     name,
+				IsMirror: isMirror,
 			})
 			return filepath.SkipDir
 		}

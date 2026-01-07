@@ -37,6 +37,7 @@ export interface RepoInfo {
 
 export interface RepoListItem {
   name: string;
+  is_mirror?: boolean;
 }
 
 const API_BASE = '/api';
@@ -93,4 +94,54 @@ export async function fetchRepos(): Promise<RepoListItem[]> {
     throw new Error('Failed to fetch repos');
   }
   return response.json();
+}
+
+export interface ImportStatus {
+  status: string;
+  step: string;
+  error?: string;
+}
+
+export async function createRepository(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/repositories/${name}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to create repository');
+  }
+}
+
+export async function deleteRepository(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/repositories/${name}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to delete repository');
+  }
+}
+
+export async function importRepository(name: string, sourceUrl: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/repositories/${name}/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ source_url: sourceUrl }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to start import');
+  }
+}
+
+export async function syncRepository(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/repositories/${name}/sync`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to start sync');
+  }
 }
