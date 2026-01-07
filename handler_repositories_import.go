@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -19,7 +20,9 @@ type importRequest struct {
 
 func (h *Handler) registryRepositoriesImport(r *mux.Router) {
 	r.HandleFunc("/api/repositories/{repo:.+}.git/import", h.requireAuth(h.handleImportRepository)).Methods(http.MethodPost)
+	r.HandleFunc("/api/repositories/{repo:.+}.git/import/status", h.requireAuth(h.handleImportStatus)).Methods(http.MethodGet)
 	r.HandleFunc("/api/repositories/{repo:.+}.git/sync", h.requireAuth(h.handleSyncRepository)).Methods(http.MethodPost)
+	r.HandleFunc("/api/repositories/{repo:.+}.git/mirror", h.requireAuth(h.handleGetMirrorInfo)).Methods(http.MethodGet)
 }
 
 // handleImportRepository handles the import of a repository from a source URL.
@@ -70,9 +73,15 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Initialize import status
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "starting",
+	})
+
 	// Run import in background
 	go func() {
-		err := h.doImport(context.Background(), repoPath, defaultBranch)
+		err := h.doImportWithStatus(context.Background(), repoPath, repoName, defaultBranch)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Import failed for %s: %v\n", repoName, err)
 		}
@@ -86,29 +95,144 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// doImport performs the actual import operation in steps.
-func (h *Handler) doImport(ctx context.Context, repoPath string, branch string) error {
+// doImportWithStatus performs the actual import operation in steps with status tracking.
+func (h *Handler) doImportWithStatus(ctx context.Context, repoPath, repoName, branch string) error {
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "fetching default branch",
+	})
+
 	err := h.fetchWithOptions(ctx, repoPath, branch, 1, true)
 	if err != nil {
+		h.setImportStatus(repoName, &ImportStatus{
+			Status: "failed",
+			Step:   "fetching default branch",
+			Error:  err.Error(),
+		})
 		return fmt.Errorf("failed to import history: %w", err)
 	}
+
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "fetching all branches (shallow)",
+	})
 
 	err = h.fetchWithOptions(ctx, repoPath, "", 1, true)
 	if err != nil {
+		h.setImportStatus(repoName, &ImportStatus{
+			Status: "failed",
+			Step:   "fetching all branches",
+			Error:  err.Error(),
+		})
 		return fmt.Errorf("failed to import history: %w", err)
 	}
+
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "fetching more history",
+	})
 
 	err = h.fetchWithOptions(ctx, repoPath, "", 10, true)
 	if err != nil {
+		h.setImportStatus(repoName, &ImportStatus{
+			Status: "failed",
+			Step:   "fetching more history",
+			Error:  err.Error(),
+		})
 		return fmt.Errorf("failed to import history: %w", err)
 	}
 
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "fetching full history",
+	})
+
 	err = h.fetchFull(ctx, repoPath)
 	if err != nil {
+		h.setImportStatus(repoName, &ImportStatus{
+			Status: "failed",
+			Step:   "fetching full history",
+			Error:  err.Error(),
+		})
 		return fmt.Errorf("failed to import full history: %w", err)
 	}
 
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "completed",
+		Step:   "done",
+	})
+
 	return nil
+}
+
+// setImportStatus updates the import status for a repository
+func (h *Handler) setImportStatus(repoName string, status *ImportStatus) {
+	h.importStatusMu.Lock()
+	defer h.importStatusMu.Unlock()
+	h.importStatus[repoName] = status
+}
+
+// getImportStatus returns the import status for a repository
+func (h *Handler) getImportStatus(repoName string) *ImportStatus {
+	h.importStatusMu.RLock()
+	defer h.importStatusMu.RUnlock()
+	return h.importStatus[repoName]
+}
+
+// handleImportStatus returns the status of an import operation
+func (h *Handler) handleImportStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+
+	repoPath := h.resolveRepoPath(repoName)
+	if repoPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	status := h.getImportStatus(repoName)
+	if status == nil {
+		// Check if repository is a mirror - if so, assume completed
+		_, isMirror, _ := h.getMirrorInfo(repoPath)
+		if isMirror {
+			status = &ImportStatus{
+				Status: "completed",
+				Step:   "done",
+			}
+		} else {
+			status = &ImportStatus{
+				Status: "unknown",
+				Step:   "no import in progress",
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// handleGetMirrorInfo returns the mirror configuration for a repository
+func (h *Handler) handleGetMirrorInfo(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+
+	repoPath := h.resolveRepoPath(repoName)
+	if repoPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	sourceURL, isMirror, err := h.getMirrorInfo(repoPath)
+	if err != nil {
+		http.Error(w, "Failed to get mirror info", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"is_mirror":  isMirror,
+		"source_url": sourceURL,
+	})
 }
 
 // fetchWithOptions fetches from remote with specified options
@@ -136,8 +260,20 @@ func (h *Handler) fetchWithOptions(ctx context.Context, repoPath, branch string,
 
 // fetchFull fetches the complete history from the source.
 func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
-	// Fetch full history
-	cmd := command(ctx, "git", "fetch", "--unshallow", "--prune", "origin", "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
+	// Check if the repository is shallow
+	shallowFile := filepath.Join(repoPath, "shallow")
+	isShallow := false
+	if _, err := os.Stat(shallowFile); err == nil {
+		isShallow = true
+	}
+
+	args := []string{"fetch", "--prune"}
+	if isShallow {
+		args = append(args, "--unshallow")
+	}
+	args = append(args, "origin", "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
+
+	cmd := command(ctx, "git", args...)
 	cmd.Dir = repoPath
 	return cmd.Run()
 }
@@ -213,11 +349,17 @@ func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Initialize import status
+	h.setImportStatus(repoName, &ImportStatus{
+		Status: "in_progress",
+		Step:   "syncing",
+	})
+
 	// Run sync in background
 	go func() {
-		err := h.doImport(context.Background(), repoPath, "")
+		err := h.doImportWithStatus(context.Background(), repoPath, repoName, "")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Import failed for %s: %v\n", repoName, err)
+			fmt.Fprintf(os.Stderr, "Sync failed for %s: %v\n", repoName, err)
 		}
 	}()
 

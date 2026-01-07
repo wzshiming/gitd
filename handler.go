@@ -3,6 +3,7 @@ package gitd
 import (
 	"net/http"
 	"path/filepath"
+	"sync"
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
@@ -12,15 +13,35 @@ type Authenticator interface {
 	Authenticate(user, password string) (string, bool)
 }
 
+// LazyMirrorSourceFunc is a function that maps a repository name to an upstream URL.
+// If the function returns an empty string, the repository will not be lazily mirrored.
+type LazyMirrorSourceFunc func(repoName string) string
+
 // Handler
 type Handler struct {
 	rootDir string
 
 	authenticate Authenticator
 
+	// lazyMirrorSource is used to determine the upstream URL for lazy mirroring.
+	// When a repository is requested but doesn't exist locally, and this function
+	// returns a non-empty URL, the repository will be created as a mirror of that URL.
+	lazyMirrorSource LazyMirrorSourceFunc
+
+	// importStatus tracks the status of ongoing import operations
+	importStatus   map[string]*ImportStatus
+	importStatusMu sync.RWMutex
+
 	locksStore   *lfsLockDB
 	contentStore *lfsContent
 	root         *mux.Router
+}
+
+// ImportStatus represents the status of an import operation
+type ImportStatus struct {
+	Status string `json:"status"` // "pending", "in_progress", "completed", "failed"
+	Step   string `json:"step"`   // Current step description
+	Error  string `json:"error"`  // Error message if failed
 }
 
 type Option func(*Handler)
@@ -37,10 +58,22 @@ func WithRootDir(rootDir string) Option {
 	}
 }
 
+// WithLazyMirrorSource sets a function that determines the upstream URL for lazy mirroring.
+// When a git operation is requested for a repository that doesn't exist locally,
+// this function is called with the repository name. If it returns a non-empty URL,
+// the repository is automatically created as a mirror of that upstream URL.
+// This enables "pull-through" caching behavior similar to Google's Goblet.
+func WithLazyMirrorSource(fn LazyMirrorSourceFunc) Option {
+	return func(h *Handler) {
+		h.lazyMirrorSource = fn
+	}
+}
+
 // NewHandler creates a new Handler with the given repository directory.
 func NewHandler(opts ...Option) *Handler {
 	h := &Handler{
-		rootDir: "./data",
+		rootDir:      "./data",
+		importStatus: make(map[string]*ImportStatus),
 	}
 
 	for _, opt := range opts {
