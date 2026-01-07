@@ -121,7 +121,7 @@ func (h *Handler) doImportWithStatus(ctx context.Context, repoPath, repoName, br
 	if err != nil {
 		h.setImportStatus(repoName, &ImportStatus{
 			Status: "failed",
-			Step:   "fetching all branches",
+			Step:   "fetching all branches (shallow)",
 			Error:  err.Error(),
 		})
 		return fmt.Errorf("failed to import history: %w", err)
