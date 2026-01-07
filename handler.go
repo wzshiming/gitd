@@ -69,6 +69,7 @@ func (h *Handler) router() *mux.Router {
 	h.registryLFSLock(r)
 
 	// Repository management endpoints
+	h.registryMirror(r)
 	h.registryRepositoriesImport(r)
 	h.registryRepositoriesInfo(r)
 	h.registryRepositories(r)

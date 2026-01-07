@@ -38,6 +38,14 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For git-upload-pack (fetch/clone), ensure lazy mirror is synced
+	if service == "git-upload-pack" {
+		if err := h.ensureLazyMirrorSynced(r.Context(), repoPath); err != nil {
+			// Log the error but continue - serve stale data if sync fails
+			// The error is already logged in the sync function
+		}
+	}
+
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-advertisement", service))
 	w.Header().Set("Cache-Control", "no-cache")
 
@@ -81,6 +89,13 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 	if repoPath == "" {
 		http.NotFound(w, r)
 		return
+	}
+
+	// For git-upload-pack (fetch/clone), ensure lazy mirror is synced
+	if service == "git-upload-pack" {
+		if err := h.ensureLazyMirrorSynced(r.Context(), repoPath); err != nil {
+			// Log the error but continue - serve stale data if sync fails
+		}
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", service))
@@ -138,6 +153,14 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 	gitPath := fullPath + ".git"
 	if isGitRepository(gitPath) {
 		return gitPath
+	}
+
+	// Try without .git extension (for URLs that include .git suffix)
+	if strings.HasSuffix(fullPath, ".git") {
+		strippedPath := strings.TrimSuffix(fullPath, ".git")
+		if isGitRepository(strippedPath) {
+			return strippedPath
+		}
 	}
 
 	return ""

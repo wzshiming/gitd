@@ -14,7 +14,8 @@ import (
 
 // importRequest represents a request to import a repository from a source URL.
 type importRequest struct {
-	SourceURL string `json:"source_url"`
+	SourceURL  string `json:"source_url"`
+	LazyMirror bool   `json:"lazy_mirror,omitempty"`
 }
 
 func (h *Handler) registryRepositoriesImport(r *mux.Router) {
@@ -57,6 +58,15 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		http.Error(w, "Failed to save mirror config", http.StatusInternalServerError)
 		return
+	}
+
+	// Set lazy mirror mode if requested
+	if req.LazyMirror {
+		err = h.setLazyMirrorConfig(ctx, repoPath, true)
+		if err != nil {
+			http.Error(w, "Failed to set lazy mirror config", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	defaultBranch, err := h.getRemoteDefaultBranch(ctx, req.SourceURL)
