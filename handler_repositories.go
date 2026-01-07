@@ -72,7 +72,7 @@ func (h *Handler) createBareRepo(ctx context.Context, repoPath string) error {
 
 func (h *Handler) handleCreateRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath != "" {
@@ -80,7 +80,7 @@ func (h *Handler) handleCreateRepository(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	repoPath = filepath.Join(h.rootDir, repoName+".git")
+	repoPath = filepath.Join(h.rootDir, repoName)
 
 	err := h.createBareRepo(r.Context(), repoPath)
 	if err != nil {
@@ -91,7 +91,7 @@ func (h *Handler) handleCreateRepository(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleDeleteRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
@@ -116,7 +116,7 @@ type Repository struct {
 
 func (h *Handler) handleGetRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
