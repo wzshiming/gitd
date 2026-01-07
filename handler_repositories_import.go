@@ -41,7 +41,7 @@ func (h *Handler) registryRepositoriesImport(r *mux.Router) {
 // The import process follows these steps for fast imports and intermittent transfers:
 func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	var req importRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -257,7 +257,7 @@ func (h *Handler) getMirrorInfo(repoPath string) (sourceURL string, isMirror boo
 // handleSyncRepository synchronizes a mirror repository with its source.
 func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
@@ -365,7 +365,7 @@ func splitLines(s string) []string {
 // handleImportStatus returns the current status of an import operation.
 func (h *Handler) handleImportStatus(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	importMutex.RLock()
 	status, exists := importStatuses[repoName]
@@ -383,7 +383,7 @@ func (h *Handler) handleImportStatus(w http.ResponseWriter, r *http.Request) {
 // handleMirrorInfo returns information about a mirror repository.
 func (h *Handler) handleMirrorInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
