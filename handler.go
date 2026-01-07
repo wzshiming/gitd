@@ -3,6 +3,7 @@ package gitd
 import (
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
@@ -18,9 +19,11 @@ type Handler struct {
 
 	authenticate Authenticator
 
-	locksStore   *lfsLockDB
-	contentStore *lfsContent
-	root         *mux.Router
+	locksStore       *lfsLockDB
+	contentStore     *lfsContent
+	lazyMirrorSync   *lazyMirrorSync
+	lazySyncCooldown time.Duration
+	root             *mux.Router
 }
 
 type Option func(*Handler)
@@ -37,10 +40,19 @@ func WithRootDir(rootDir string) Option {
 	}
 }
 
+// WithLazySyncCooldown sets the cooldown period between lazy mirror syncs.
+// Default is 1 minute.
+func WithLazySyncCooldown(cooldown time.Duration) Option {
+	return func(h *Handler) {
+		h.lazySyncCooldown = cooldown
+	}
+}
+
 // NewHandler creates a new Handler with the given repository directory.
 func NewHandler(opts ...Option) *Handler {
 	h := &Handler{
-		rootDir: "./data",
+		rootDir:          "./data",
+		lazySyncCooldown: time.Minute, // Default: 1 minute cooldown
 	}
 
 	for _, opt := range opts {
@@ -49,6 +61,7 @@ func NewHandler(opts ...Option) *Handler {
 
 	h.locksStore = newLFSLock(filepath.Join(h.rootDir, "lfs", "locks.db"))
 	h.contentStore = &lfsContent{basePath: filepath.Join(h.rootDir, "lfs")}
+	h.lazyMirrorSync = newLazyMirrorSync(h.lazySyncCooldown)
 	h.root = h.router()
 	return h
 }

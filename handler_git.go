@@ -1,11 +1,13 @@
 package gitd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -26,6 +28,9 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	// Lazy sync for mirror repositories
+	h.syncLazyMirrorIfNeeded(r.Context(), repoPath)
 
 	service := r.URL.Query().Get("service")
 	if service == "" {
@@ -81,6 +86,11 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 	if repoPath == "" {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Lazy sync for mirror repositories (only for upload-pack/fetch operations)
+	if service == "git-upload-pack" {
+		h.syncLazyMirrorIfNeeded(r.Context(), repoPath)
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", service))
@@ -140,6 +150,14 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 		return gitPath
 	}
 
+	// Try without .git extension (if it ends with .git)
+	if strings.HasSuffix(fullPath, ".git") {
+		noGitPath := strings.TrimSuffix(fullPath, ".git")
+		if isGitRepository(noGitPath) {
+			return noGitPath
+		}
+	}
+
 	return ""
 }
 
@@ -159,4 +177,27 @@ func isGitRepository(path string) bool {
 // packetLine formats a string as a git packet-line.
 func packetLine(s string) []byte {
 	return []byte(fmt.Sprintf("%04x%s", len(s)+4, s))
+}
+
+// syncLazyMirrorIfNeeded syncs a mirror repository if lazy mode is enabled.
+// This is a non-blocking operation that syncs in the background if needed.
+func (h *Handler) syncLazyMirrorIfNeeded(ctx context.Context, repoPath string) {
+	// Check if this is a lazy mirror
+	if !isLazyMirror(repoPath) {
+		return
+	}
+
+	// Get the mirror source URL
+	sourceURL, isMirror, err := h.getMirrorInfo(repoPath)
+	if err != nil || !isMirror || sourceURL == "" {
+		return
+	}
+
+	// Trigger lazy sync
+	go func() {
+		// Use a timeout for the sync operation to avoid blocking indefinitely
+		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = h.lazyMirrorSync.syncMirror(syncCtx, repoPath, sourceURL)
+	}()
 }

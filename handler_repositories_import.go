@@ -15,11 +15,14 @@ import (
 // importRequest represents a request to import a repository from a source URL.
 type importRequest struct {
 	SourceURL string `json:"source_url"`
+	Lazy      bool   `json:"lazy,omitempty"` // Enable lazy mirror mode
 }
 
 func (h *Handler) registryRepositoriesImport(r *mux.Router) {
 	r.HandleFunc("/api/repositories/{repo:.+}.git/import", h.requireAuth(h.handleImportRepository)).Methods(http.MethodPost)
 	r.HandleFunc("/api/repositories/{repo:.+}.git/sync", h.requireAuth(h.handleSyncRepository)).Methods(http.MethodPost)
+	r.HandleFunc("/api/repositories/{repo:.+}.git/mirror", h.requireAuth(h.handleMirrorInfo)).Methods(http.MethodGet)
+	r.HandleFunc("/api/repositories/{repo:.+}.git/mirror/lazy", h.requireAuth(h.handleMirrorLazy)).Methods(http.MethodPut)
 }
 
 // handleImportRepository handles the import of a repository from a source URL.
@@ -57,6 +60,14 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		http.Error(w, "Failed to save mirror config", http.StatusInternalServerError)
 		return
+	}
+
+	// Enable lazy mode if requested
+	if req.Lazy {
+		if err := setLazyMirror(ctx, repoPath, true); err != nil {
+			http.Error(w, "Failed to enable lazy mirror", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	defaultBranch, err := h.getRemoteDefaultBranch(ctx, req.SourceURL)
@@ -279,4 +290,81 @@ func splitLines(s string) []string {
 		lines = append(lines, s[start:])
 	}
 	return lines
+}
+
+// MirrorInfo represents mirror information for a repository.
+type MirrorInfo struct {
+	IsMirror  bool   `json:"is_mirror"`
+	SourceURL string `json:"source_url,omitempty"`
+	IsLazy    bool   `json:"is_lazy"`
+}
+
+// handleMirrorInfo returns mirror information for a repository.
+func (h *Handler) handleMirrorInfo(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+
+	repoPath := h.resolveRepoPath(repoName)
+	if repoPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	sourceURL, isMirror, err := h.getMirrorInfo(repoPath)
+	if err != nil {
+		http.Error(w, "Failed to get mirror info", http.StatusInternalServerError)
+		return
+	}
+
+	info := MirrorInfo{
+		IsMirror:  isMirror,
+		SourceURL: sourceURL,
+		IsLazy:    isLazyMirror(repoPath),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+// lazyMirrorRequest represents a request to enable/disable lazy mirror mode.
+type lazyMirrorRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// handleMirrorLazy enables or disables lazy mirror mode for a repository.
+func (h *Handler) handleMirrorLazy(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+
+	repoPath := h.resolveRepoPath(repoName)
+	if repoPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Check if this is a mirror repository
+	_, isMirror, err := h.getMirrorInfo(repoPath)
+	if err != nil {
+		http.Error(w, "Failed to get mirror info", http.StatusInternalServerError)
+		return
+	}
+
+	if !isMirror {
+		http.Error(w, "Repository is not a mirror", http.StatusBadRequest)
+		return
+	}
+
+	var req lazyMirrorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := setLazyMirror(r.Context(), repoPath, req.Enabled); err != nil {
+		http.Error(w, "Failed to update lazy mirror setting", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
