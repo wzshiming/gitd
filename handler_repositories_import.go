@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -146,6 +147,15 @@ func (h *Handler) doImport(ctx context.Context, repoPath string, branch string, 
 		return fmt.Errorf("failed to import full history: %w", err)
 	}
 
+	importMutex.Lock()
+	importStatuses[repoName] = &importStatus{Status: "in_progress", Step: "fetching lfs objects"}
+	importMutex.Unlock()
+
+	err = h.fetchLFS(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to import LFS objects: %w", err)
+	}
+
 	return nil
 }
 
@@ -190,6 +200,81 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 	cmd = command(ctx, "git", "fetch", "--unshallow", "--prune", "origin", "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
 	cmd.Dir = repoPath
 	return cmd.Run()
+}
+
+// fetchLFS fetches all Git LFS objects from the source repository and stores them in gitd's LFS storage.
+func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
+	// Check if LFS is initialized in the repository
+	cmd := command(ctx, "git", "lfs", "env")
+	cmd.Dir = repoPath
+	err := cmd.Run()
+	if err != nil {
+		// LFS is not installed or not initialized, skip LFS fetch
+		// This is not an error, as not all repos use LFS
+		return nil
+	}
+
+	// Fetch all LFS objects
+	cmd = command(ctx, "git", "lfs", "fetch", "--all")
+	cmd.Dir = repoPath
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	// Copy LFS objects from repository storage to gitd's LFS storage
+	repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
+	return h.copyLFSObjects(repoLFSPath)
+}
+
+// copyLFSObjects copies LFS objects from a source directory to gitd's LFS storage.
+func (h *Handler) copyLFSObjects(sourcePath string) error {
+	// Check if source path exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		// No LFS objects to copy
+		return nil
+	}
+
+	// Walk through the source LFS objects directory
+	return filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Get the OID from the file path
+		// LFS objects are stored as: {2-char}/{2-char}/{rest-of-oid}
+		relPath, err := filepath.Rel(sourcePath, path)
+		if err != nil {
+			return err
+		}
+
+		// Convert path separators to OID
+		oid := strings.ReplaceAll(relPath, string(filepath.Separator), "")
+
+		// Check if object already exists in gitd's storage
+		if h.contentStore.Exists(oid) {
+			return nil
+		}
+
+		// Copy the object to gitd's LFS storage
+		sourceFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer sourceFile.Close()
+
+		err = h.contentStore.Put(oid, sourceFile, info.Size())
+		if err != nil {
+			return fmt.Errorf("failed to store LFS object %s: %w", oid, err)
+		}
+
+		return nil
+	})
 }
 
 func (h *Handler) isMirrorRepository(repo *git.Repository) (bool, string, error) {
