@@ -246,15 +246,10 @@ func (h *Handler) copyLFSObjects(sourcePath string) error {
 			return nil
 		}
 
-		// Get the OID from the file path
-		// LFS objects are stored as: {2-char}/{2-char}/{rest-of-oid}
-		relPath, err := filepath.Rel(sourcePath, path)
-		if err != nil {
-			return err
-		}
-
-		// Convert path separators to OID
-		oid := strings.ReplaceAll(relPath, string(filepath.Separator), "")
+		// Get the OID from the filename
+		// Git LFS stores objects as: {2-char}/{2-char}/{full-oid}
+		// The filename itself is the full OID
+		oid := filepath.Base(path)
 
 		// Check if object already exists in gitd's storage
 		if h.contentStore.Exists(oid) {
