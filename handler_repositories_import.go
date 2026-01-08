@@ -204,20 +204,10 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 
 // fetchLFS fetches all Git LFS objects from the source repository and stores them in gitd's LFS storage.
 func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
-	// Check if LFS is initialized in the repository
-	cmd := command(ctx, "git", "lfs", "env")
+	// Fetch all LFS objects
+	cmd := command(ctx, "git", "lfs", "fetch", "--all")
 	cmd.Dir = repoPath
 	err := cmd.Run()
-	if err != nil {
-		// LFS is not installed or not initialized, skip LFS fetch
-		// This is not an error, as not all repos use LFS
-		return nil
-	}
-
-	// Fetch all LFS objects
-	cmd = command(ctx, "git", "lfs", "fetch", "--all")
-	cmd.Dir = repoPath
-	err = cmd.Run()
 	if err != nil {
 		return err
 	}
