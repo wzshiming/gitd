@@ -202,10 +202,12 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 	return cmd.Run()
 }
 
-// fetchLFS fetches all Git LFS objects from the source repository and stores them in gitd's LFS storage.
+// fetchLFS fetches Git LFS objects from the source repository and stores them in gitd's LFS storage.
+// Only fetches objects that are not already in the local cache.
 func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
-	// Fetch all LFS objects
-	cmd := command(ctx, "git", "lfs", "fetch", "--all")
+	// Fetch LFS objects for the refs that were just fetched
+	// Without --all, this only downloads objects not already in cache
+	cmd := command(ctx, "git", "lfs", "fetch", "origin")
 	cmd.Dir = repoPath
 	err := cmd.Run()
 	if err != nil {
