@@ -2,6 +2,8 @@ package gitd_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -110,8 +112,12 @@ func TestImportRepositoryWithLFS(t *testing.T) {
 		}
 
 		// Check if LFS objects exist in storage
-		// The actual content OID (not the pointer file OID)
-		oid := "be81f51559b40b4a444a792ca7aa18d23ff4a23d293d9cc03e0c4520c802a5c7"
+		// The actual content OID is the SHA256 hash of the LFS file content
+		// Content: "large file content for testing LFS" (without newline)
+		lfsTestContent := []byte("large file content for testing LFS")
+		hash := sha256.Sum256(lfsTestContent)
+		oid := hex.EncodeToString(hash[:])
+		
 		lfsObjectPath := filepath.Join(lfsStoragePath, oid[0:2], oid[2:4], oid[4:])
 		if _, err := os.Stat(lfsObjectPath); os.IsNotExist(err) {
 			t.Errorf("LFS object was not imported to storage, expected at: %s", lfsObjectPath)
