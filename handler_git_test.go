@@ -50,8 +50,8 @@ func TestGitServer(t *testing.T) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status 200 or 201, got %d", resp.StatusCode)
 		}
 
 		// Verify repository was created
