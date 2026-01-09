@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wzshiming/httpseek"
 )
 
 // RemoteClient handles fetching LFS objects from remote Git LFS servers
@@ -20,6 +23,16 @@ type RemoteClient struct {
 func NewRemoteClient() *RemoteClient {
 	return &RemoteClient{
 		httpClient: &http.Client{
+			Transport: httpseek.NewMustReaderTransport(http.DefaultTransport,
+				func(r *http.Request, retry int, err error) error {
+					log.Printf("Retry %d for %s due to error: %v\n", retry+1, r.URL.String(), err)
+					if retry >= 5 {
+						return fmt.Errorf("max retries reached for %s: %w", r.URL.String(), err)
+					}
+					// Simple backoff strategy
+					time.Sleep(time.Duration(retry+1) * time.Second)
+					return nil
+				}),
 			Timeout: 30 * time.Minute, // Long timeout for large files
 		},
 	}
@@ -139,7 +152,7 @@ func (c *RemoteClient) BatchDownload(ctx context.Context, lfsEndpoint string, ob
 
 // DownloadObject downloads an LFS object from the given action
 func (c *RemoteClient) DownloadObject(ctx context.Context, action *Action) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", action.Href, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, action.Href, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create download request: %w", err)
 	}
@@ -188,7 +201,7 @@ func (c *RemoteClient) FetchAndStore(ctx context.Context, lfsEndpoint string, ob
 	// Download and store each object
 	for _, obj := range batchResp.Objects {
 		if obj.Error != nil {
-			// Log but continue with other objects
+			log.Printf("Skipping object %s due to error: %s\n", obj.Oid, obj.Error.Message)
 			continue
 		}
 
@@ -197,16 +210,17 @@ func (c *RemoteClient) FetchAndStore(ctx context.Context, lfsEndpoint string, ob
 			continue
 		}
 
+		log.Printf("Downloading LFS object %s\n", obj.Oid)
 		body, err := c.DownloadObject(ctx, &downloadAction)
 		if err != nil {
-			// Log but continue with other objects
+			log.Printf("Failed to download LFS object %s: %v\n", obj.Oid, err)
 			continue
 		}
 
 		err = store.Put(obj.Oid, body, obj.Size)
 		body.Close()
 		if err != nil {
-			// Log but continue with other objects
+			log.Printf("Failed to store LFS object %s: %v\n", obj.Oid, err)
 			continue
 		}
 	}
