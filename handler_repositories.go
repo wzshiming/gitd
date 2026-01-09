@@ -2,15 +2,15 @@ package gitd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/gitd/pkg/repository"
 )
 
 func (h *Handler) registryRepositories(r *mux.Router) {
@@ -59,20 +59,17 @@ func (h *Handler) handleCreateRepository(w http.ResponseWriter, r *http.Request)
 	repoName := vars["repo"] + ".git"
 
 	repoPath := h.resolveRepoPath(repoName)
-	if repoPath != "" {
+	if repoPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	if repository.IsRepository(repoPath) {
 		http.Error(w, "Repository already exists", http.StatusConflict)
 		return
 	}
 
-	repoPath = filepath.Join(h.rootDir, repoName)
-
-	_, err := git.PlainInitWithOptions(repoPath, &git.PlainInitOptions{
-		Bare: true,
-		InitOptions: git.InitOptions{
-			DefaultBranch: plumbing.NewBranchReferenceName("main"),
-		},
-	})
-
+	_, err := repository.Init(repoPath, "main")
 	if err != nil {
 		http.Error(w, "Failed to create repository", http.StatusInternalServerError)
 		return
@@ -90,7 +87,17 @@ func (h *Handler) handleDeleteRepository(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err := os.RemoveAll(repoPath)
+	repo, err := repository.Open(repoPath)
+	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "Failed to open repository", http.StatusInternalServerError)
+		return
+	}
+
+	err = repo.Remove()
 	if err != nil {
 		http.Error(w, "Failed to delete repository", http.StatusInternalServerError)
 		return
@@ -115,21 +122,25 @@ func (h *Handler) handleGetRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repository, err := h.openRepository(repoPath)
+	repo, err := repository.Open(repoPath)
 	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Failed to read repository config", http.StatusInternalServerError)
 		return
 	}
 
-	isMirror, _, err := h.isMirrorRepository(repository)
+	isMirror, _, err := repo.IsMirror()
 	if err != nil {
 		http.Error(w, "Failed to get mirror config", http.StatusInternalServerError)
 		return
 	}
 
-	defaultBranch := h.getDefaultBranch(repository)
+	defaultBranch := repo.DefaultBranch()
 
-	repo := Repository{
+	info := Repository{
 		Name:          repoName,
 		IsMirror:      isMirror,
 		DefaultBranch: defaultBranch,
@@ -137,7 +148,7 @@ func (h *Handler) handleGetRepository(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(repo)
+	json.NewEncoder(w).Encode(info)
 }
 
 type RepositoryItem struct {
@@ -157,8 +168,8 @@ func (h *Handler) handleListRepositories(w http.ResponseWriter, r *http.Request)
 		if !info.IsDir() {
 			return nil
 		}
-		if isGitRepository(path) {
-			repository, err := h.openRepository(path)
+		if repository.IsRepository(path) {
+			repo, err := repository.Open(path)
 			if err != nil {
 				return nil
 			}
@@ -167,7 +178,7 @@ func (h *Handler) handleListRepositories(w http.ResponseWriter, r *http.Request)
 			name := strings.TrimSuffix(rel, ".git")
 
 			// Check if this is a mirror repository
-			isMirror, _, err := h.isMirrorRepository(repository)
+			isMirror, _, err := repo.IsMirror()
 			if err != nil {
 				return nil
 			}

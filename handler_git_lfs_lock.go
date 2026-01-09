@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/gitd/pkg/lfs"
 )
 
 var (
@@ -29,7 +30,7 @@ func (h *Handler) handleGetLock(w http.ResponseWriter, r *http.Request) {
 	repo := vars["repo"] + ".git"
 
 	enc := json.NewEncoder(w)
-	ll := &lfsLockList{}
+	ll := &lfs.LockList{}
 
 	w.Header().Set("Content-Type", metaMediaType)
 
@@ -59,10 +60,10 @@ func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", metaMediaType)
 
-	reqBody := &lfsVerifiableLockRequest{}
+	reqBody := &lfs.VerifiableLockRequest{}
 	if err := dec.Decode(reqBody); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfsVerifiableLockList{Message: err.Error()})
+		enc.Encode(&lfs.VerifiableLockList{Message: err.Error()})
 		return
 	}
 
@@ -72,7 +73,7 @@ func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	ll := &lfsVerifiableLockList{}
+	ll := &lfs.VerifiableLockList{}
 	locks, nextCursor, err := h.locksStore.Filtered(repo, "",
 		reqBody.Cursor,
 		strconv.Itoa(limit))
@@ -104,40 +105,40 @@ func (h *Handler) handleCreateLock(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", metaMediaType)
 
-	var lockRequest lfsLockRequest
+	var lockRequest lfs.LockRequest
 	if err := dec.Decode(&lockRequest); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfsLockResponse{Message: err.Error()})
+		enc.Encode(&lfs.LockResponse{Message: err.Error()})
 		return
 	}
 
 	locks, _, err := h.locksStore.Filtered(repo, lockRequest.Path, "", "1")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(&lfsLockResponse{Message: err.Error()})
+		enc.Encode(&lfs.LockResponse{Message: err.Error()})
 		return
 	}
 	if len(locks) > 0 {
 		w.WriteHeader(http.StatusConflict)
-		enc.Encode(&lfsLockResponse{Message: "lock already created"})
+		enc.Encode(&lfs.LockResponse{Message: "lock already created"})
 		return
 	}
 
-	lock := &lfsLock{
+	lock := &lfs.Lock{
 		Id:       randomLockId(),
 		Path:     lockRequest.Path,
-		Owner:    lfsUser{Name: user},
+		Owner:    lfs.User{Name: user},
 		LockedAt: time.Now(),
 	}
 
 	if err := h.locksStore.Add(repo, *lock); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(&lfsLockResponse{Message: err.Error()})
+		enc.Encode(&lfs.LockResponse{Message: err.Error()})
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	enc.Encode(&lfsLockResponse{
+	enc.Encode(&lfs.LockResponse{
 		Lock: lock,
 	})
 
@@ -154,17 +155,17 @@ func (h *Handler) handleDeleteLock(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", metaMediaType)
 
-	var unlockRequest lfsUnlockRequest
+	var unlockRequest lfs.UnlockRequest
 
 	if len(lockId) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfsUnlockResponse{Message: "invalid lock id"})
+		enc.Encode(&lfs.UnlockResponse{Message: "invalid lock id"})
 		return
 	}
 
 	if err := dec.Decode(&unlockRequest); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfsUnlockResponse{Message: err.Error()})
+		enc.Encode(&lfs.UnlockResponse{Message: err.Error()})
 		return
 	}
 
@@ -175,16 +176,16 @@ func (h *Handler) handleDeleteLock(w http.ResponseWriter, r *http.Request) {
 		} else {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		enc.Encode(&lfsUnlockResponse{Message: err.Error()})
+		enc.Encode(&lfs.UnlockResponse{Message: err.Error()})
 		return
 	}
 	if l == nil {
 		w.WriteHeader(http.StatusNotFound)
-		enc.Encode(&lfsUnlockResponse{Message: "unable to find lock"})
+		enc.Encode(&lfs.UnlockResponse{Message: "unable to find lock"})
 		return
 	}
 
-	enc.Encode(&lfsUnlockResponse{Lock: l})
+	enc.Encode(&lfs.UnlockResponse{Lock: l})
 
 }
 
@@ -200,51 +201,4 @@ func getUserFromRequest(r *http.Request) string {
 		return ""
 	}
 	return user.(string)
-}
-
-type lfsUser struct {
-	Name string `json:"name"`
-}
-
-type lfsLock struct {
-	Id       string    `json:"id"`
-	Path     string    `json:"path"`
-	Owner    lfsUser   `json:"owner"`
-	LockedAt time.Time `json:"locked_at"`
-}
-
-type lfsLockRequest struct {
-	Path string `json:"path"`
-}
-
-type lfsLockResponse struct {
-	Lock    *lfsLock `json:"lock"`
-	Message string   `json:"message,omitempty"`
-}
-
-type lfsUnlockRequest struct {
-	Force bool `json:"force"`
-}
-
-type lfsUnlockResponse struct {
-	Lock    *lfsLock `json:"lock"`
-	Message string   `json:"message,omitempty"`
-}
-
-type lfsLockList struct {
-	Locks      []lfsLock `json:"locks"`
-	NextCursor string    `json:"next_cursor,omitempty"`
-	Message    string    `json:"message,omitempty"`
-}
-
-type lfsVerifiableLockRequest struct {
-	Cursor string `json:"cursor,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-}
-
-type lfsVerifiableLockList struct {
-	Ours       []lfsLock `json:"ours"`
-	Theirs     []lfsLock `json:"theirs"`
-	NextCursor string    `json:"next_cursor,omitempty"`
-	Message    string    `json:"message,omitempty"`
 }

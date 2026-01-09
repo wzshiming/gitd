@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,6 +63,51 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 
 	enc := json.NewEncoder(w)
 	enc.Encode(respobj)
+}
+
+// handlePutContent receives data from the client and puts it into the content store
+func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
+	rv := unpack(r)
+	if err := h.contentStore.Put(rv.Oid, r.Body, r.ContentLength); err != nil {
+		http.Error(w, "Failed to store content", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleGetContent gets the content from the content store
+func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
+	rv := unpack(r)
+	content, stat, err := h.contentStore.Get(rv.Oid)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer content.Close()
+
+	filename := r.URL.Query().Get("filename")
+	if filename != "" {
+		w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filename))
+	}
+
+	http.ServeContent(w, r, "", stat.ModTime(), content)
+}
+
+func (h *Handler) handleVerifyObject(w http.ResponseWriter, r *http.Request) {
+	rv := unpack(r)
+	info, err := h.contentStore.Info(rv.Oid)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			http.Error(w, "Failed to verify object", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	if info.Size() != rv.Size {
+		http.Error(w, "Size mismatch", http.StatusBadRequest)
+		return
+	}
 }
 
 // lfsRepresent takes a RequestVars and Meta and turns it into a Representation suitable

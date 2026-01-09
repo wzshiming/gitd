@@ -1,14 +1,14 @@
 package gitd
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/gitd/internal/utils"
+	"github.com/wzshiming/gitd/pkg/repository"
 )
 
 func (h *Handler) registryGit(r *mux.Router) {
@@ -39,12 +39,16 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repository, err := h.openRepository(repoPath)
+	repo, err := repository.Open(repoPath)
 	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Failed to open repository", http.StatusInternalServerError)
 		return
 	}
-	isMirror, _, err := h.isMirrorRepository(repository)
+	isMirror, _, err := repo.IsMirror()
 	if err != nil {
 		http.Error(w, "Failed to check repository type", http.StatusInternalServerError)
 		return
@@ -52,12 +56,6 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 	if isMirror {
 		if service == "git-receive-pack" {
 			http.Error(w, "push to mirror repository is not allowed", http.StatusForbidden)
-			return
-		}
-
-		err := h.fetchFull(context.Background(), repoPath)
-		if err != nil {
-			http.Error(w, "Failed to fetch mirror repository", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -75,7 +73,7 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 
 	base, dir := filepath.Split(repoPath)
 
-	cmd := command(r.Context(), service, "--stateless-rpc", "--advertise-refs", dir)
+	cmd := utils.Command(r.Context(), service, "--stateless-rpc", "--advertise-refs", dir)
 	// Execute git command
 	cmd.Dir = base
 	cmd.Stdout = w
@@ -112,7 +110,7 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 
 	base, dir := filepath.Split(repoPath)
 
-	cmd := command(r.Context(), service, "--stateless-rpc", dir)
+	cmd := utils.Command(r.Context(), service, "--stateless-rpc", dir)
 	cmd.Dir = base
 	cmd.Stdin = r.Body
 	cmd.Stdout = w
@@ -124,8 +122,6 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 
 // resolveRepoPath resolves and validates a repository path.
 func (h *Handler) resolveRepoPath(urlPath string) string {
-	// Clean the path
-	urlPath = strings.TrimPrefix(urlPath, "/")
 	if urlPath == "" {
 		return ""
 	}
@@ -133,51 +129,7 @@ func (h *Handler) resolveRepoPath(urlPath string) string {
 	// Construct the full path
 	fullPath := filepath.Join(h.rootDir, urlPath)
 
-	// Clean and verify the path is within RepoDir using filepath.Rel
-	fullPath = filepath.Clean(fullPath)
-	absRepoDir, err := filepath.Abs(h.rootDir)
-	if err != nil {
-		return ""
-	}
-	absFullPath, err := filepath.Abs(fullPath)
-	if err != nil {
-		return ""
-	}
-	// Use filepath.Rel to safely check if absFullPath is within absRepoDir
-	relPath, err := filepath.Rel(absRepoDir, absFullPath)
-	if err != nil {
-		return ""
-	}
-	// Reject if the relative path starts with ".." (meaning it's outside RepoDir)
-	if strings.HasPrefix(relPath, "..") {
-		return ""
-	}
-
-	// Check if the path is a git repository
-	if isGitRepository(fullPath) {
-		return fullPath
-	}
-
-	// Try with .git extension
-	gitPath := fullPath + ".git"
-	if isGitRepository(gitPath) {
-		return gitPath
-	}
-
-	return ""
-}
-
-// isGitRepository checks if the given path is a git repository.
-func isGitRepository(path string) bool {
-	// Check for bare repository (has HEAD file directly)
-	if _, err := os.Stat(filepath.Join(path, "HEAD")); err == nil {
-		return true
-	}
-	// Check for non-bare repository (has .git directory)
-	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
-		return true
-	}
-	return false
+	return filepath.Clean(fullPath)
 }
 
 // packetLine formats a string as a git packet-line.
