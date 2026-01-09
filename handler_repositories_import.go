@@ -13,6 +13,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/gorilla/mux"
+
+	lfsconfig "github.com/git-lfs/git-lfs/v3/config"
+	"github.com/git-lfs/git-lfs/v3/lfs"
 )
 
 // importRequest represents a request to import a repository from a source URL.
@@ -203,21 +206,62 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 }
 
 // fetchLFS fetches Git LFS objects from the source repository and stores them in gitd's LFS storage.
-// Uses git-lfs library to scan for LFS pointers and downloads missing objects.
+// Uses git-lfs library to check locally cached files and only copies those.
 func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
-	// First, try using git lfs fetch command for simplicity
+	// Use git lfs fetch command to download LFS objects
+	// This respects the local cache and only downloads missing objects
 	cmd := command(ctx, "git", "lfs", "fetch", "origin")
 	cmd.Dir = repoPath
 	err := cmd.Run()
 	if err != nil {
 		// If git lfs command fails, it might not be installed or the repo doesn't use LFS
-		// This is not critical, just log and continue
-		fmt.Fprintf(os.Stderr, "git lfs fetch failed (LFS may not be available or used): %v\n", err)
+		fmt.Fprintf(os.Stderr, "git lfs fetch failed (LFS may not be available): %v\n", err)
 	}
 
-	// Copy LFS objects from repository storage to gitd's LFS storage
+	// Now use git-lfs library to scan for LFS pointers and copy cached objects to gitd storage
+	cfg := lfsconfig.NewIn(repoPath, repoPath)
+	scanner := lfs.NewGitScanner(cfg, func(p *lfs.WrappedPointer, err error) {
+		if err != nil {
+			return
+		}
+		if p == nil {
+			return
+		}
+
+		// Check if already in gitd's storage
+		if h.contentStore.Exists(p.Oid) {
+			return
+		}
+
+		// Check if cached locally in repository's LFS storage
+		lfsCachePath := filepath.Join(repoPath, "lfs", "objects", p.Oid[0:2], p.Oid[2:4], p.Oid)
+		if stat, err := os.Stat(lfsCachePath); err == nil {
+			// Object is cached, copy it to gitd storage
+			if err := h.copyLFSObject(lfsCachePath, p.Oid, stat.Size()); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to copy LFS object %s: %v\n", p.Oid, err)
+			}
+		}
+	})
+
+	// Scan all refs to find LFS pointers
+	if err := scanner.ScanAll(nil); err != nil {
+		fmt.Fprintf(os.Stderr, "Error scanning for LFS pointers: %v\n", err)
+	}
+
+	// Also copy any LFS objects from repository storage (fallback)
 	repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
 	return h.copyLFSObjects(repoLFSPath)
+}
+
+// copyLFSObject copies a single LFS object to gitd's LFS storage.
+func (h *Handler) copyLFSObject(sourcePath, oid string, size int64) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	return h.contentStore.Put(oid, sourceFile, size)
 }
 
 // copyLFSObjects copies LFS objects from a source directory to gitd's LFS storage.
