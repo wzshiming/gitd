@@ -2,8 +2,11 @@ package gitd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,7 +18,8 @@ import (
 	"github.com/gorilla/mux"
 
 	lfsconfig "github.com/git-lfs/git-lfs/v3/config"
-	"github.com/git-lfs/git-lfs/v3/lfs"
+	"github.com/git-lfs/git-lfs/v3/lfsapi"
+	"github.com/git-lfs/git-lfs/v3/tq"
 )
 
 // importRequest represents a request to import a repository from a source URL.
@@ -206,51 +210,233 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 }
 
 // fetchLFS fetches Git LFS objects from the source repository and stores them in gitd's LFS storage.
-// Uses git-lfs library to check locally cached files and only copies those.
+// Uses git-lfs library to get download links and http.Get to download files.
 func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
-	// Use git lfs fetch command to download LFS objects
-	// This respects the local cache and only downloads missing objects
-	cmd := command(ctx, "git", "lfs", "fetch", "origin")
-	cmd.Dir = repoPath
-	err := cmd.Run()
-	if err != nil {
-		// If git lfs command fails, it might not be installed or the repo doesn't use LFS
-		fmt.Fprintf(os.Stderr, "git lfs fetch failed (LFS may not be available): %v\n", err)
-	}
-
-	// Now use git-lfs library to scan for LFS pointers and copy cached objects to gitd storage
-	cfg := lfsconfig.NewIn(repoPath, repoPath)
-	scanner := lfs.NewGitScanner(cfg, func(p *lfs.WrappedPointer, err error) {
-		if err != nil {
-			return
-		}
-		if p == nil {
-			return
-		}
-
-		// Check if already in gitd's storage
-		if h.contentStore.Exists(p.Oid) {
-			return
-		}
-
-		// Check if cached locally in repository's LFS storage
-		lfsCachePath := filepath.Join(repoPath, "lfs", "objects", p.Oid[0:2], p.Oid[2:4], p.Oid)
-		if stat, err := os.Stat(lfsCachePath); err == nil {
-			// Object is cached, copy it to gitd storage
-			if err := h.copyLFSObject(lfsCachePath, p.Oid, stat.Size()); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to copy LFS object %s: %v\n", p.Oid, err)
+	// Get the remote URL to determine how to fetch LFS objects
+	repo, err := git.PlainOpen(repoPath)
+	if err == nil {
+		cfg, err := repo.Config()
+		if err == nil {
+			if remote, ok := cfg.Remotes["origin"]; ok && len(remote.URLs) > 0 {
+				remoteURL := remote.URLs[0]
+				// If it's a local file URL, copy LFS objects directly from source
+				if strings.HasPrefix(remoteURL, "file://") || strings.HasPrefix(remoteURL, "/") || !strings.Contains(remoteURL, "://") {
+					sourceRepoPath := strings.TrimPrefix(remoteURL, "file://")
+					sourceLFSPath := filepath.Join(sourceRepoPath, "lfs", "objects")
+					if stat, err := os.Stat(sourceLFSPath); err == nil && stat.IsDir() {
+						// Copy LFS objects directly from source
+						return h.copyLFSObjectsFromSource(sourceLFSPath)
+					}
+				}
 			}
 		}
-	})
-
-	// Scan all refs to find LFS pointers
-	if err := scanner.ScanAll(nil); err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning for LFS pointers: %v\n", err)
 	}
 
-	// Also copy any LFS objects from repository storage (fallback)
+	// For remote URLs, use batch API + HTTP download
+	// Get list of LFS objects using git lfs ls-files command
+	cmd := command(ctx, "git", "lfs", "ls-files", "-l")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		// If git lfs command fails, fall back to copying any existing LFS objects
+		fmt.Fprintf(os.Stderr, "git lfs ls-files failed (LFS may not be available): %v\n", err)
+		repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
+		return h.copyLFSObjects(repoLFSPath)
+	}
+
+	// Parse output to get OIDs
+	lines := strings.Split(string(output), "\n")
+	type lfsObject struct {
+		oid  string
+		size int64
+		name string
+	}
+	var objects []lfsObject
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 3 {
+			continue
+		}
+		oid := parts[0]
+		name := parts[2]
+		
+		// Check if already in gitd's storage
+		if h.contentStore.Exists(oid) {
+			continue
+		}
+
+		// Check if cached locally
+		lfsCachePath := filepath.Join(repoPath, "lfs", "objects", oid[0:2], oid[2:4], oid)
+		if stat, err := os.Stat(lfsCachePath); err == nil {
+			// Object is cached, copy it
+			if err := h.copyLFSObject(lfsCachePath, oid, stat.Size()); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to copy cached LFS object %s: %v\n", oid, err)
+			}
+			continue
+		}
+
+		objects = append(objects, lfsObject{oid: oid, size: 0, name: name})
+	}
+
+	// If no objects to download, we're done
+	if len(objects) == 0 {
+		repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
+		return h.copyLFSObjects(repoLFSPath)
+	}
+
+	// Initialize git-lfs client for batch API
+	cfg := lfsconfig.NewIn(repoPath, repoPath)
+	apiClient, err := lfsapi.NewClient(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create LFS client: %v\n", err)
+		repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
+		return h.copyLFSObjects(repoLFSPath)
+	}
+
+	manifest := tq.NewManifest(cfg.Filesystem(), apiClient, "download", "origin")
+
+	// Prepare batch request
+	transfers := make([]*tq.Transfer, len(objects))
+	for i, obj := range objects {
+		transfers[i] = &tq.Transfer{
+			Name: obj.name,
+			Oid:  obj.oid,
+			Size: obj.size,
+		}
+	}
+
+	// Get batch response with download URLs
+	batchResp, err := tq.Batch(manifest, tq.Download, "origin", nil, transfers)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get batch download URLs: %v\n", err)
+		repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
+		return h.copyLFSObjects(repoLFSPath)
+	}
+
+	// Download each object using http.Get
+	for _, obj := range batchResp.Objects {
+		if obj.Error != nil {
+			fmt.Fprintf(os.Stderr, "Error for object %s: %v\n", obj.Oid, obj.Error)
+			continue
+		}
+
+		// Get download action
+		downloadAction, ok := obj.Actions["download"]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "No download action for object %s\n", obj.Oid)
+			continue
+		}
+
+		// Download the object using http.Get
+		if err := h.downloadLFSObject(ctx, downloadAction.Href, downloadAction.Header, obj.Oid, obj.Size); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to download LFS object %s: %v\n", obj.Oid, err)
+		}
+	}
+
+	// Also copy any existing LFS objects from repository storage (fallback)
 	repoLFSPath := filepath.Join(repoPath, "lfs", "objects")
 	return h.copyLFSObjects(repoLFSPath)
+}
+
+// copyLFSObjectsFromSource copies LFS objects directly from a source repository's LFS storage.
+func (h *Handler) copyLFSObjectsFromSource(sourcePath string) error {
+	return filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Get the OID from the filename
+		oid := filepath.Base(path)
+
+		// Check if object already exists in gitd's storage
+		if h.contentStore.Exists(oid) {
+			return nil
+		}
+
+		// Copy the object to gitd's LFS storage
+		sourceFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer sourceFile.Close()
+
+		err = h.contentStore.Put(oid, sourceFile, info.Size())
+		if err != nil {
+			return fmt.Errorf("failed to store LFS object %s: %w", oid, err)
+		}
+
+		return nil
+	})
+}
+
+// downloadLFSObject downloads an LFS object from a URL using http.Get and stores it in gitd's storage.
+func (h *Handler) downloadLFSObject(ctx context.Context, url string, headers map[string]string, oid string, size int64) error {
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	// Add headers from LFS server
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	// Download the file
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Create a temporary file to store the download
+	tmpFile, err := os.CreateTemp("", "lfs-download-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// Calculate SHA256 while downloading
+	hash := sha256.New()
+	writer := io.MultiWriter(tmpFile, hash)
+
+	written, err := io.Copy(writer, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Verify size
+	if written != size {
+		return fmt.Errorf("size mismatch: expected %d, got %d", size, written)
+	}
+
+	// Verify OID
+	calculatedOid := hex.EncodeToString(hash.Sum(nil))
+	if calculatedOid != oid {
+		return fmt.Errorf("OID mismatch: expected %s, got %s", oid, calculatedOid)
+	}
+
+	// Rewind file for reading
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		return err
+	}
+
+	// Store in gitd's LFS storage
+	return h.contentStore.Put(oid, tmpFile, size)
 }
 
 // copyLFSObject copies a single LFS object to gitd's LFS storage.
