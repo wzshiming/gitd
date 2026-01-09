@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/gitd/pkg/lfs"
 )
 
 type Authenticator interface {
@@ -18,8 +19,8 @@ type Handler struct {
 
 	authenticate Authenticator
 
-	locksStore   *lfsLockDB
-	contentStore *lfsContent
+	locksStore   *lfs.LockDB
+	contentStore *lfs.Content
 	root         *mux.Router
 }
 
@@ -47,8 +48,8 @@ func NewHandler(opts ...Option) *Handler {
 		opt(h)
 	}
 
-	h.locksStore = newLFSLock(filepath.Join(h.rootDir, "lfs", "locks.db"))
-	h.contentStore = &lfsContent{basePath: filepath.Join(h.rootDir, "lfs")}
+	h.locksStore = lfs.NewLock(filepath.Join(h.rootDir, "lfs", "locks.db"))
+	h.contentStore = lfs.NewContent(filepath.Join(h.rootDir, "lfs"))
 	h.root = h.router()
 	return h
 }

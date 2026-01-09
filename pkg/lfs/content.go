@@ -1,14 +1,12 @@
-package gitd
+package lfs
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 var (
@@ -16,59 +14,18 @@ var (
 	errSizeMismatch = errors.New("Content size does not match")
 )
 
-// handlePutContent receives data from the client and puts it into the content store
-func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
-	rv := unpack(r)
-	if err := h.contentStore.Put(rv.Oid, r.Body, r.ContentLength); err != nil {
-		http.Error(w, "Failed to store content", http.StatusInternalServerError)
-		return
-	}
-}
-
-// handleGetContent gets the content from the content store
-func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
-	rv := unpack(r)
-	content, stat, err := h.contentStore.Get(rv.Oid)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer content.Close()
-
-	filename := r.URL.Query().Get("filename")
-	if filename != "" {
-		w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filename))
-	}
-
-	http.ServeContent(w, r, "", stat.ModTime(), content)
-}
-
-func (h *Handler) handleVerifyObject(w http.ResponseWriter, r *http.Request) {
-	rv := unpack(r)
-	info, err := h.contentStore.Info(rv.Oid)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			http.Error(w, "Failed to verify object", http.StatusInternalServerError)
-			return
-		}
-		http.NotFound(w, r)
-		return
-	}
-
-	if info.Size() != rv.Size {
-		http.Error(w, "Size mismatch", http.StatusBadRequest)
-		return
-	}
-}
-
-// lfsContent provides a simple file system based storage.
-type lfsContent struct {
+// Content provides a simple file system based storage.
+type Content struct {
 	basePath string
+}
+
+func NewContent(basePath string) *Content {
+	return &Content{basePath: basePath}
 }
 
 // Get takes a Meta object and retreives the content from the store, returning
 // it as an io.ReaderCloser. If fromByte > 0, the reader starts from that byte
-func (s *lfsContent) Get(oid string) (io.ReadSeekCloser, os.FileInfo, error) {
+func (s *Content) Get(oid string) (io.ReadSeekCloser, os.FileInfo, error) {
 	path := filepath.Join(s.basePath, transformKey(oid))
 
 	f, err := os.Open(path)
@@ -83,7 +40,7 @@ func (s *lfsContent) Get(oid string) (io.ReadSeekCloser, os.FileInfo, error) {
 }
 
 // Put takes a Meta object and an io.Reader and writes the content to the store.
-func (s *lfsContent) Put(oid string, r io.Reader, size int64) error {
+func (s *Content) Put(oid string, r io.Reader, size int64) error {
 	path := filepath.Join(s.basePath, transformKey(oid))
 
 	dir := filepath.Dir(path)
@@ -122,13 +79,13 @@ func (s *lfsContent) Put(oid string, r io.Reader, size int64) error {
 	return nil
 }
 
-func (s *lfsContent) Info(oid string) (os.FileInfo, error) {
+func (s *Content) Info(oid string) (os.FileInfo, error) {
 	path := filepath.Join(s.basePath, transformKey(oid))
 	return os.Stat(path)
 }
 
 // Exists returns true if the object exists in the content store.
-func (s *lfsContent) Exists(oid string) bool {
+func (s *Content) Exists(oid string) bool {
 	path := filepath.Join(s.basePath, transformKey(oid))
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false

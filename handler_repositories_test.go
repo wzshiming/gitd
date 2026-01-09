@@ -34,8 +34,8 @@ func TestRepositoryManagement(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status 200 for create, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusCreated {
+			t.Errorf("Expected status 201 for create, got %d", resp.StatusCode)
 		}
 
 		// Verify it's a valid git repository
@@ -108,8 +108,8 @@ func TestRepositoryManagement(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status 200 for create, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusCreated {
+			t.Errorf("Expected status 201 for create, got %d", resp.StatusCode)
 		}
 
 		// Verify it exists

@@ -3,16 +3,15 @@ package gitd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/gitd/internal/utils"
+	"github.com/wzshiming/gitd/pkg/repository"
 )
 
 // importRequest represents a request to import a repository from a source URL.
@@ -63,8 +62,7 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Check if the repository directory already exists
-	if _, err := os.Stat(repoPath); !os.IsNotExist(err) {
+	if repository.IsRepository(repoPath) {
 		http.Error(w, "Repository already exists", http.StatusConflict)
 		return
 	}
@@ -77,9 +75,15 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = h.initMirrorRepo(repoPath, req.SourceURL, defaultBranch)
+	repo, err := repository.Init(repoPath, defaultBranch)
 	if err != nil {
 		http.Error(w, "Failed to create repository", http.StatusInternalServerError)
+		return
+	}
+
+	err = repo.SetMirrorRemote(req.SourceURL)
+	if err != nil {
+		http.Error(w, "Failed to set mirror remote", http.StatusInternalServerError)
 		return
 	}
 
@@ -93,7 +97,7 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 
 	// Run import in background
 	go func() {
-		err := h.doImport(context.Background(), repoPath, defaultBranch, repoName)
+		err := repo.SyncMirror(context.Background())
 		importMutex.Lock()
 		defer importMutex.Unlock()
 		if err != nil {
@@ -117,137 +121,6 @@ func (h *Handler) handleImportRepository(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// doImport performs the actual import operation in steps.
-func (h *Handler) doImport(ctx context.Context, repoPath string, branch string, repoName string) error {
-	importMutex.Lock()
-	importStatuses[repoName] = &importStatus{Status: "in_progress", Step: "fetching initial branch"}
-	importMutex.Unlock()
-
-	err := h.fetchWithOptions(ctx, repoPath, branch, false, 1)
-	if err != nil {
-		return fmt.Errorf("failed to import history: %w", err)
-	}
-
-	err = h.fetchWithOptions(ctx, repoPath, branch, false, 100)
-	if err != nil {
-		return fmt.Errorf("failed to import history: %w", err)
-	}
-
-	err = h.fetchWithOptions(ctx, repoPath, branch, false, 0)
-	if err != nil {
-		return fmt.Errorf("failed to import history: %w", err)
-	}
-
-	importMutex.Lock()
-	importStatuses[repoName] = &importStatus{Status: "in_progress", Step: "fetching full history"}
-	importMutex.Unlock()
-
-	err = h.fetchFull(ctx, repoPath)
-	if err != nil {
-		return fmt.Errorf("failed to import full history: %w", err)
-	}
-
-	return nil
-}
-
-// fetchWithOptions fetches from remote with specified options
-func (h *Handler) fetchWithOptions(ctx context.Context, repoPath, branch string, tags bool, depth int) error {
-	args := []string{"fetch"}
-
-	if depth > 0 {
-		args = append(args, fmt.Sprintf("--depth=%d", depth))
-	}
-
-	if branch != "" {
-		args = append(args, "origin", fmt.Sprintf("+refs/heads/%s:refs/heads/%s", branch, branch))
-	}
-
-	if tags {
-		args = append(args, "--tags")
-	}
-
-	cmd := command(ctx, "git", args...)
-	cmd.Dir = repoPath
-	return cmd.Run()
-}
-
-// fetchFull fetches the complete history from the source.
-func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
-	// Check if repository is already a complete (non-shallow) clone
-	cmd := command(ctx, "git", "rev-parse", "--is-shallow-repository")
-	cmd.Dir = repoPath
-	output, err := cmd.Output()
-	if err == nil {
-		isShallow := strings.TrimSpace(string(output))
-		if isShallow == "false" {
-			// Repository is already complete, just fetch updates
-			cmd = command(ctx, "git", "fetch", "--prune", "origin", "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
-			cmd.Dir = repoPath
-			return cmd.Run()
-		}
-	}
-
-	// Fetch full history with unshallow
-	cmd = command(ctx, "git", "fetch", "--unshallow", "--prune", "origin", "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
-	cmd.Dir = repoPath
-	return cmd.Run()
-}
-
-func (h *Handler) isMirrorRepository(repo *git.Repository) (bool, string, error) {
-	config, err := repo.Config()
-	if err != nil {
-		return false, "", err
-	}
-	isMirror := false
-	sourceURL := ""
-	if config != nil {
-		if remote, ok := config.Remotes["origin"]; ok {
-			if remote.Mirror {
-				isMirror = true
-			}
-			if len(remote.URLs) > 0 {
-				sourceURL = remote.URLs[0]
-			}
-		}
-	}
-	return isMirror, sourceURL, nil
-}
-
-func (h *Handler) initMirrorRepo(repoPath string, sourceURL string, defaultBranch string) error {
-	repo, err := git.PlainInitWithOptions(repoPath, &git.PlainInitOptions{
-		Bare: true,
-		InitOptions: git.InitOptions{
-			DefaultBranch: plumbing.NewBranchReferenceName(defaultBranch),
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	cfg, err := repo.Config()
-	if err != nil {
-		return err
-	}
-	cfg.Init.DefaultBranch = defaultBranch
-	cfg.Remotes = map[string]*config.RemoteConfig{
-		"origin": {
-			Name:   "origin",
-			URLs:   []string{sourceURL},
-			Mirror: true,
-			Fetch: []config.RefSpec{
-				"+refs/heads/*:refs/heads/*",
-				"+refs/tags/*:refs/tags/*",
-			},
-		},
-	}
-
-	err = repo.Storer.SetConfig(cfg)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // handleSyncRepository synchronizes a mirror repository with its source.
 func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -259,13 +132,17 @@ func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repository, err := h.openRepository(repoPath)
+	repo, err := repository.Open(repoPath)
 	if err != nil {
-		http.Error(w, "Failed to read repository config", http.StatusInternalServerError)
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "Failed to open repository", http.StatusInternalServerError)
 		return
 	}
 
-	isMirror, sourceURL, err := h.isMirrorRepository(repository)
+	isMirror, sourceURL, err := repo.IsMirror()
 	if err != nil {
 		http.Error(w, "Failed to get mirror config", http.StatusInternalServerError)
 		return
@@ -286,7 +163,7 @@ func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 
 	// Run sync in background
 	go func() {
-		err := h.doImport(context.Background(), repoPath, "", repoName)
+		err := repo.SyncMirror(context.Background())
 		importMutex.Lock()
 		defer importMutex.Unlock()
 		if err != nil {
@@ -307,7 +184,7 @@ func (h *Handler) handleSyncRepository(w http.ResponseWriter, r *http.Request) {
 
 // getRemoteDefaultBranch discovers the default branch of a remote repository
 func (h *Handler) getRemoteDefaultBranch(ctx context.Context, sourceURL string) (string, error) {
-	cmd := command(ctx, "git", "ls-remote", "--symref", sourceURL, "HEAD")
+	cmd := utils.Command(ctx, "git", "ls-remote", "--symref", sourceURL, "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -384,13 +261,17 @@ func (h *Handler) handleMirrorInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repository, err := h.openRepository(repoPath)
+	repo, err := repository.Open(repoPath)
 	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Failed to read repository config", http.StatusInternalServerError)
 		return
 	}
 
-	isMirror, sourceURL, err := h.isMirrorRepository(repository)
+	isMirror, sourceURL, err := repo.IsMirror()
 	if err != nil {
 		http.Error(w, "Failed to get mirror config", http.StatusInternalServerError)
 		return

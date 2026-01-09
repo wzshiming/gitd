@@ -1,4 +1,4 @@
-package gitd
+package lfs
 
 import (
 	"encoding/json"
@@ -14,22 +14,23 @@ import (
 	"github.com/boltdb/bolt"
 )
 
-// lfsLockDB implements a metadata storage. It stores user credentials and Meta information
-// for objects. The storage is handled by boltdb.
-type lfsLockDB struct {
-	db *bolt.DB
-}
-
 var (
+	ErrNotOwner = errors.New("Attempt to delete other user's lock")
 	errNoBucket = errors.New("Bucket not found")
 )
+
+// LockDB implements a metadata storage. It stores user credentials and Meta information
+// for objects. The storage is handled by boltdb.
+type LockDB struct {
+	db *bolt.DB
+}
 
 var (
 	locksBucket = []byte("locks")
 )
 
-// newLFSLock creates a new MetaStore using the boltdb database at dbFile.
-func newLFSLock(dbFile string) *lfsLockDB {
+// NewLock creates a new MetaStore using the boltdb database at dbFile.
+func NewLock(dbFile string) *LockDB {
 	err := os.MkdirAll(filepath.Dir(dbFile), 0755)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create directory for boltdb file %s: %v", dbFile, err))
@@ -46,18 +47,18 @@ func newLFSLock(dbFile string) *lfsLockDB {
 		return nil
 	})
 
-	return &lfsLockDB{db: db}
+	return &LockDB{db: db}
 }
 
 // Add write locks to the store for the repo.
-func (s *lfsLockDB) Add(repo string, l ...lfsLock) error {
+func (s *LockDB) Add(repo string, l ...Lock) error {
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(locksBucket)
 		if bucket == nil {
 			return errNoBucket
 		}
 
-		var locks []lfsLock
+		var locks []Lock
 		data := bucket.Get([]byte(repo))
 		if data != nil {
 			if err := json.Unmarshal(data, &locks); err != nil {
@@ -79,8 +80,8 @@ func (s *lfsLockDB) Add(repo string, l ...lfsLock) error {
 }
 
 // List retrieves locks for the repo from the store
-func (s *lfsLockDB) List(repo string) ([]lfsLock, error) {
-	var locks []lfsLock
+func (s *LockDB) List(repo string) ([]Lock, error) {
+	var locks []Lock
 	err := s.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(locksBucket)
 		if bucket == nil {
@@ -99,7 +100,7 @@ func (s *lfsLockDB) List(repo string) ([]lfsLock, error) {
 }
 
 // Filtered return filtered locks for the repo
-func (s *lfsLockDB) Filtered(repo, path, cursor, limit string) (locks []lfsLock, next string, err error) {
+func (s *LockDB) Filtered(repo, path, cursor, limit string) (locks []Lock, next string, err error) {
 	locks, err = s.List(repo)
 	if err != nil {
 		return
@@ -123,7 +124,7 @@ func (s *lfsLockDB) Filtered(repo, path, cursor, limit string) (locks []lfsLock,
 	}
 
 	if path != "" {
-		var filtered []lfsLock
+		var filtered []Lock
 		for _, l := range locks {
 			if l.Path == path {
 				filtered = append(filtered, l)
@@ -137,7 +138,7 @@ func (s *lfsLockDB) Filtered(repo, path, cursor, limit string) (locks []lfsLock,
 		var size int
 		size, err = strconv.Atoi(limit)
 		if err != nil || size < 0 {
-			locks = make([]lfsLock, 0)
+			locks = make([]Lock, 0)
 			err = fmt.Errorf("Invalid limit amount: %s", limit)
 			return
 		}
@@ -153,24 +154,24 @@ func (s *lfsLockDB) Filtered(repo, path, cursor, limit string) (locks []lfsLock,
 }
 
 // Delete removes lock for the repo by id from the store
-func (s *lfsLockDB) Delete(repo, user, id string, force bool) (*lfsLock, error) {
-	var deleted *lfsLock
+func (s *LockDB) Delete(repo, user, id string, force bool) (*Lock, error) {
+	var deleted *Lock
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(locksBucket)
 		if bucket == nil {
 			return errNoBucket
 		}
 
-		var locks []lfsLock
+		var locks []Lock
 		data := bucket.Get([]byte(repo))
 		if data != nil {
 			if err := json.Unmarshal(data, &locks); err != nil {
 				return err
 			}
 		}
-		newLocks := make([]lfsLock, 0, len(locks))
+		newLocks := make([]Lock, 0, len(locks))
 
-		var lock lfsLock
+		var lock Lock
 		for _, l := range locks {
 			if l.Id == id {
 				if l.Owner.Name != user && !force {
@@ -200,6 +201,53 @@ func (s *lfsLockDB) Delete(repo, user, id string, force bool) (*lfsLock, error) 
 }
 
 // Close closes the underlying boltdb.
-func (s *lfsLockDB) Close() {
+func (s *LockDB) Close() {
 	s.db.Close()
+}
+
+type User struct {
+	Name string `json:"name"`
+}
+
+type Lock struct {
+	Id       string    `json:"id"`
+	Path     string    `json:"path"`
+	Owner    User      `json:"owner"`
+	LockedAt time.Time `json:"locked_at"`
+}
+
+type LockRequest struct {
+	Path string `json:"path"`
+}
+
+type LockResponse struct {
+	Lock    *Lock  `json:"lock"`
+	Message string `json:"message,omitempty"`
+}
+
+type UnlockRequest struct {
+	Force bool `json:"force"`
+}
+
+type UnlockResponse struct {
+	Lock    *Lock  `json:"lock"`
+	Message string `json:"message,omitempty"`
+}
+
+type LockList struct {
+	Locks      []Lock `json:"locks"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+type VerifiableLockRequest struct {
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+type VerifiableLockList struct {
+	Ours       []Lock `json:"ours"`
+	Theirs     []Lock `json:"theirs"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
