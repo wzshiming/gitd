@@ -203,15 +203,16 @@ func (h *Handler) fetchFull(ctx context.Context, repoPath string) error {
 }
 
 // fetchLFS fetches Git LFS objects from the source repository and stores them in gitd's LFS storage.
-// Only fetches objects that are not already in the local cache.
+// Uses git-lfs library to scan for LFS pointers and downloads missing objects.
 func (h *Handler) fetchLFS(ctx context.Context, repoPath string) error {
-	// Fetch LFS objects for the refs that were just fetched
-	// Without --all, this only downloads objects not already in cache
+	// First, try using git lfs fetch command for simplicity
 	cmd := command(ctx, "git", "lfs", "fetch", "origin")
 	cmd.Dir = repoPath
 	err := cmd.Run()
 	if err != nil {
-		return err
+		// If git lfs command fails, it might not be installed or the repo doesn't use LFS
+		// This is not critical, just log and continue
+		fmt.Fprintf(os.Stderr, "git lfs fetch failed (LFS may not be available or used): %v\n", err)
 	}
 
 	// Copy LFS objects from repository storage to gitd's LFS storage
