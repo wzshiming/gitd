@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Branch } from '../api/client';
 import './BranchSelector.css';
+import { FaCodeBranch, FaAngleDown, FaCheck } from 'react-icons/fa';
 
 interface BranchSelectorProps {
   branches: Branch[];
@@ -31,9 +32,9 @@ export function BranchSelector({ branches, currentBranch, repo, currentPath, isB
         className="branch-button"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="branch-icon">🌿</span>
+        <FaCodeBranch />
         <span className="branch-name">{currentBranch}</span>
-        <span className="dropdown-arrow">▼</span>
+        <FaAngleDown />
       </button>
       {isOpen && (
         <div className="branch-dropdown">
@@ -44,7 +45,7 @@ export function BranchSelector({ branches, currentBranch, repo, currentPath, isB
               className={`branch-option ${branch.name === currentBranch ? 'active' : ''}`}
               onClick={() => handleBranchSelect(branch.name)}
             >
-              {branch.name === currentBranch && <span className="check">✓</span>}
+              {branch.name === currentBranch && <FaCheck />}
               {branch.name}
             </div>
           ))}

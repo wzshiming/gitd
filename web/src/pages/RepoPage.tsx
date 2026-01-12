@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, Link } from 'react-router-dom';
+import { FaFolderOpen } from 'react-icons/fa';
 import { fetchTree, fetchBranches, fetchCommits, fetchBlob, fetchRepoInfo } from '../api/client';
 import type { TreeEntry, Branch, Commit, Repository } from '../api/client';
 import { FileTree } from '../components/FileTree';
@@ -138,7 +139,7 @@ export function RepoPage() {
   return (
     <div className="repo-page">
       <header className="repo-header">
-        <Link to="/" className="home-link">🗂️ gitd</Link>
+        <Link to="/" className="home-link"><FaFolderOpen /> gitd</Link>
       </header>
       
       <div className="repo-toolbar">

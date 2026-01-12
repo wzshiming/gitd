@@ -20,17 +20,8 @@
   background-color: #eaeef2;
 }
 
-.branch-icon {
-  font-size: 14px;
-}
-
 .branch-name {
   font-weight: 500;
-}
-
-.dropdown-arrow {
-  font-size: 10px;
-  color: #656d76;
 }
 
 .branch-dropdown {
@@ -71,8 +62,4 @@
 
 .branch-option.active {
   font-weight: 500;
-}
-
-.branch-option .check {
-  color: #1a7f37;
 }

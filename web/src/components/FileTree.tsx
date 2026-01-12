@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { FaFolder, FaRegFile, FaDownload } from 'react-icons/fa';
 import type { TreeEntry } from '../api/client';
 import './FileTree.css';
 
@@ -34,7 +35,7 @@ export function FileTree({ entries, repo, branch, currentPath }: FileTreeProps) 
                   to={`/${repo}/tree/${branch}/${currentPath.split('/').slice(0, -1).join('/')}`}
                   className="file-link"
                 >
-                  <span className="file-icon">📁</span>
+                  <span className="file-icon"><FaFolder /></span>
                   ..
                 </Link>
               </td>
@@ -48,7 +49,7 @@ export function FileTree({ entries, repo, branch, currentPath }: FileTreeProps) 
                   className="file-link"
                 >
                   <span className="file-icon">
-                    {entry.type === 'tree' ? '📁' : '📄'}
+                    {entry.type === 'tree' ? <FaFolder /> : <FaRegFile />}
                   </span>
                   {entry.name}
                 </Link>
@@ -61,7 +62,7 @@ export function FileTree({ entries, repo, branch, currentPath }: FileTreeProps) 
                     title={`Download ${entry.name}`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    ⬇
+                    <FaDownload />
                   </a>
                 )}
               </td>

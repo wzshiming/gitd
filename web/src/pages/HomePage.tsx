@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaListAlt, FaFolderOpen } from 'react-icons/fa';
+import { prefixIcon } from '../utils/iconUtils';  
 import { fetchRepositories, createRepository, deleteRepository, importRepository, syncRepository } from '../api/client';
 import type { RepositoryItem } from '../api/client';
 import './HomePage.css';
@@ -122,11 +124,11 @@ export function HomePage() {
     <div className="home-page">
       <header className="header">
         <h1>
-          <span className="logo">🗂️</span>
+          <span className="logo"><FaFolderOpen /></span>
           gitd
         </h1>
         <nav className="header-nav">
-          <Link to="/queue" className="nav-link">📋 Queue</Link>
+          <Link to="/queue" className="nav-link"><FaListAlt /> Queue</Link>
         </nav>
       </header>
       <main className="main-content">
@@ -134,10 +136,10 @@ export function HomePage() {
           <h2>Repositories</h2>
           <div className="repo-actions">
             <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-              ➕ New Repository
+              <FaPlus /> New Repository
             </button>
             <button className="btn btn-secondary" onClick={() => setShowImportModal(true)}>
-              📥 Import Repository
+              <FaDownload /> Import Repository
             </button>
           </div>
         </div>
@@ -148,11 +150,11 @@ export function HomePage() {
             {repos.map((repo) => (
               <li key={repo.name} className="repo-item">
                 <Link to={`/${repo.name}`} className="repo-link">
-                  <span className="repo-icon">📁</span>
                   <span className="repo-full-name">
+                    {prefixIcon(repo.name)}
                     <strong>{repo.name}</strong>
-                    {repo.is_mirror && <span className="mirror-badge">Mirror</span>}
                   </span>
+                  {repo.is_mirror && <span className="mirror-badge">Mirror</span>}
                 </Link>
                 <div className="repo-item-actions">
                   {repo.is_mirror && (
@@ -165,7 +167,7 @@ export function HomePage() {
                       disabled={syncingRepos.has(repo.name)}
                       title="Synchronize with source"
                     >
-                      {syncingRepos.has(repo.name) ? '⏳' : '🔄'}
+                      {syncingRepos.has(repo.name) ? <FaClock /> : <FaSync />}
                     </button>
                   )}
                   <button
@@ -176,7 +178,7 @@ export function HomePage() {
                     }}
                     title="Delete repository"
                   >
-                    🗑️
+                    <FaTrash />
                   </button>
                 </div>
               </li>

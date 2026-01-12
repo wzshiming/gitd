@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
+import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
+import { FaArrowLeft, FaSync, FaClock, FaCheckCircle, FaTimesCircle, FaBan, FaQuestionCircle, FaArrowUp, FaArrowDown, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import { fetchTasks, cancelTask, updateTaskPriority } from '../api/client';
 import type { Task } from '../api/client';
 import './QueuePage.css';
@@ -16,14 +18,14 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
 }
 
-function getStatusIcon(status: Task['status']): string {
+function getStatusIcon(status: Task['status']): ReactElement {
   switch (status) {
-    case 'pending': return '⏳';
-    case 'running': return '🔄';
-    case 'completed': return '✅';
-    case 'failed': return '❌';
-    case 'cancelled': return '🚫';
-    default: return '❓';
+    case 'pending': return <FaClock />;
+    case 'running': return <FaSync />;
+    case 'completed': return <FaCheckCircle />;
+    case 'failed': return <FaTimesCircle />;
+    case 'cancelled': return <FaBan />;
+    default: return <FaQuestionCircle />;
   }
 }
 
@@ -88,9 +90,7 @@ export function QueuePage() {
     <div className="queue-page">
       <header className="header">
         <h1>
-          <Link to="/" className="back-link">←</Link>
-          <span className="logo">📋</span>
-          Task Queue
+          <Link to="/" className="back-link"><FaArrowLeft /></Link>
         </h1>
       </header>
 
@@ -114,7 +114,7 @@ export function QueuePage() {
               <option value="cancelled">Cancelled</option>
             </select>
             <button className="btn btn-secondary" onClick={loadTasks}>
-              🔄 Refresh
+              <FaSync /> Refresh
             </button>
           </div>
         </div>
@@ -147,14 +147,14 @@ export function QueuePage() {
                           onClick={() => handlePriorityChange(task.id, 10)}
                           title="Increase priority"
                         >
-                          ⬆️
+                          <FaArrowUp />
                         </button>
                         <button
                           className="btn btn-icon"
                           onClick={() => handlePriorityChange(task.id, -10)}
                           title="Decrease priority"
                         >
-                          ⬇️
+                          <FaArrowDown />
                         </button>
                       </>
                     )}
@@ -164,7 +164,7 @@ export function QueuePage() {
                         onClick={() => handleCancel(task.id)}
                         title="Cancel task"
                       >
-                        ✖️
+                        <FaTimes />
                       </button>
                     )}
                   </div>
@@ -212,7 +212,7 @@ export function QueuePage() {
 
                 {task.error && (
                   <div className="task-error">
-                    ⚠️ {task.error}
+                    <FaExclamationTriangle /> {task.error}
                   </div>
                 )}
               </div>
