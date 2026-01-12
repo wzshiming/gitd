@@ -59,6 +59,9 @@ type TaskEvent struct {
 // Subscriber receives task change events
 type Subscriber chan TaskEvent
 
+// subscriberBufferSize is the buffer size for subscriber channels
+const subscriberBufferSize = 100
+
 // Store provides SQLite-backed storage for the task queue
 type Store struct {
 	db          *sql.DB
@@ -343,10 +346,14 @@ func (s *Store) Delete(id int64) error {
 	defer s.mu.Unlock()
 
 	// Get task before deleting for notification
-	task, _ := s.getByID(id)
+	task, err := s.getByID(id)
+	if err != nil {
+		// Task doesn't exist, nothing to delete
+		return nil
+	}
 
-	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
-	if err == nil && task != nil {
+	_, err = s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	if err == nil {
 		s.notify("deleted", task)
 	}
 	return err
@@ -467,7 +474,7 @@ func (s *Store) Subscribe() Subscriber {
 	s.subMu.Lock()
 	defer s.subMu.Unlock()
 
-	ch := make(Subscriber, 100)
+	ch := make(Subscriber, subscriberBufferSize)
 	s.subscribers[ch] = struct{}{}
 	return ch
 }

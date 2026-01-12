@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { FaArrowLeft, FaSync, FaClock, FaCheckCircle, FaTimesCircle, FaBan, FaQuestionCircle, FaArrowUp, FaArrowDown, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
@@ -55,12 +55,6 @@ export function QueuePage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const [connected, setConnected] = useState(false);
-  const tasksRef = useRef<Task[]>([]);
-
-  // Keep tasksRef in sync with tasks state
-  useEffect(() => {
-    tasksRef.current = tasks;
-  }, [tasks]);
 
   const handleEvent = useCallback((event: TaskEvent) => {
     setLoading(false);
@@ -104,7 +98,7 @@ export function QueuePage() {
   };
 
   const handlePriorityChange = async (id: number, delta: number) => {
-    const task = tasksRef.current.find(t => t.id === id);
+    const task = tasks.find(t => t.id === id);
     if (!task) return;
     try {
       await updateTaskPriority(id, task.priority + delta);
