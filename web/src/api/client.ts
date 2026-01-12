@@ -139,6 +139,39 @@ export interface Task {
   completed_at?: string;
 }
 
+export interface TaskEvent {
+  type: 'init' | 'created' | 'updated' | 'deleted';
+  task?: Task;
+  tasks?: Task[];
+}
+
+export function subscribeToQueueEvents(
+  onEvent: (event: TaskEvent) => void,
+  onError?: (error: Event) => void
+): () => void {
+  const eventSource = new EventSource(`${API_BASE}/queue/events`);
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data) as TaskEvent;
+      onEvent(data);
+    } catch {
+      // Ignore parse errors (e.g., heartbeat comments)
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    if (onError) {
+      onError(error);
+    }
+  };
+  
+  // Return cleanup function
+  return () => {
+    eventSource.close();
+  };
+}
+
 export async function fetchTasks(status?: string, limit?: number): Promise<Task[]> {
   const params = new URLSearchParams();
   if (status) params.set('status', status);

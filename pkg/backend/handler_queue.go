@@ -2,8 +2,10 @@ package backend
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/wzshiming/gitd/pkg/queue"
@@ -11,6 +13,7 @@ import (
 
 func (h *Handler) registryQueue(r *mux.Router) {
 	r.HandleFunc("/api/queue", h.handleListTasks).Methods(http.MethodGet)
+	r.HandleFunc("/api/queue/events", h.handleQueueEvents).Methods(http.MethodGet)
 	r.HandleFunc("/api/queue/{id:[0-9]+}", h.handleGetTask).Methods(http.MethodGet)
 	r.HandleFunc("/api/queue/{id:[0-9]+}/priority", h.handleUpdateTaskPriority).Methods(http.MethodPut)
 	r.HandleFunc("/api/queue/{id:[0-9]+}", h.handleCancelTask).Methods(http.MethodDelete)
@@ -152,4 +155,67 @@ func (h *Handler) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleQueueEvents streams task events using Server-Sent Events
+func (h *Handler) handleQueueEvents(w http.ResponseWriter, r *http.Request) {
+	if h.queueStore == nil {
+		http.Error(w, "Queue not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Subscribe to task events
+	sub := h.queueStore.Subscribe()
+	defer h.queueStore.Unsubscribe(sub)
+
+	// Send initial task list
+	tasks, err := h.queueStore.List(nil, 100)
+	if err == nil {
+		if tasks == nil {
+			tasks = []*queue.Task{}
+		}
+		data, _ := json.Marshal(map[string]interface{}{
+			"type":  "init",
+			"tasks": tasks,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// Create heartbeat ticker
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-sub:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-heartbeat.C:
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
+		}
+	}
 }

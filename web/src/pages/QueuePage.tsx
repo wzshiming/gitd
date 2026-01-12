@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { FaArrowLeft, FaSync, FaClock, FaCheckCircle, FaTimesCircle, FaBan, FaQuestionCircle, FaArrowUp, FaArrowDown, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
-import { fetchTasks, cancelTask, updateTaskPriority } from '../api/client';
-import type { Task } from '../api/client';
+import { cancelTask, updateTaskPriority, subscribeToQueueEvents } from '../api/client';
+import type { Task, TaskEvent } from '../api/client';
 import './QueuePage.css';
 
 function formatBytes(bytes: number): string {
@@ -37,52 +37,87 @@ function getTaskTypeLabel(type: Task['type']): string {
   }
 }
 
+// Helper function to sort tasks: running first, then pending, then others, by priority then created_at
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const statusOrder = { running: 0, pending: 1, completed: 2, failed: 2, cancelled: 2 };
+    const aOrder = statusOrder[a.status] ?? 2;
+    const bOrder = statusOrder[b.status] ?? 2;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+}
+
 export function QueuePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [connected, setConnected] = useState(false);
+  const tasksRef = useRef<Task[]>([]);
 
-  const loadTasks = useCallback(async () => {
-    try {
-      const status = filter === 'all' ? undefined : filter;
-      const data = await fetchTasks(status, 100);
-      setTasks(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
-    } finally {
-      setLoading(false);
+  // Keep tasksRef in sync with tasks state
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  const handleEvent = useCallback((event: TaskEvent) => {
+    setLoading(false);
+    setError(null);
+    setConnected(true);
+    
+    if (event.type === 'init' && event.tasks) {
+      setTasks(sortTasks(event.tasks));
+    } else if (event.type === 'created' && event.task) {
+      setTasks(prev => sortTasks([...prev, event.task!]));
+    } else if (event.type === 'updated' && event.task) {
+      setTasks(prev => {
+        const updated = prev.map(t => t.id === event.task!.id ? event.task! : t);
+        return sortTasks(updated);
+      });
+    } else if (event.type === 'deleted' && event.task) {
+      setTasks(prev => prev.filter(t => t.id !== event.task!.id));
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
-    loadTasks();
-    // Auto-refresh every 2 seconds for active tasks
-    const interval = setInterval(loadTasks, 2000);
-    return () => clearInterval(interval);
-  }, [loadTasks]);
+    const cleanup = subscribeToQueueEvents(
+      handleEvent,
+      () => {
+        setError('Connection lost. Reconnecting...');
+        setConnected(false);
+      }
+    );
+
+    return cleanup;
+  }, [handleEvent]);
 
   const handleCancel = async (id: number) => {
     if (!confirm('Are you sure you want to cancel this task?')) return;
     try {
       await cancelTask(id);
-      loadTasks();
+      // SSE will update the task state
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to cancel task');
     }
   };
 
   const handlePriorityChange = async (id: number, delta: number) => {
-    const task = tasks.find(t => t.id === id);
+    const task = tasksRef.current.find(t => t.id === id);
     if (!task) return;
     try {
       await updateTaskPriority(id, task.priority + delta);
-      loadTasks();
+      // SSE will update the task state
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update priority');
     }
   };
+
+  // Apply client-side filter
+  const filteredTasks = filter === 'all' 
+    ? tasks 
+    : tasks.filter(t => t.status === filter);
 
   const activeCount = tasks.filter(t => t.status === 'running' || t.status === 'pending').length;
 
@@ -113,9 +148,9 @@ export function QueuePage() {
               <option value="failed">Failed</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <button className="btn btn-secondary" onClick={loadTasks}>
-              <FaSync /> Refresh
-            </button>
+            <span className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+              {connected ? '● Live' : '○ Connecting...'}
+            </span>
           </div>
         </div>
 
@@ -123,13 +158,13 @@ export function QueuePage() {
           <div className="loading">Loading tasks...</div>
         ) : error ? (
           <div className="error">Error: {error}</div>
-        ) : tasks.length === 0 ? (
+        ) : filteredTasks.length === 0 ? (
           <div className="no-tasks">
             <p>No tasks in the queue.</p>
           </div>
         ) : (
           <div className="task-list">
-            {tasks.map((task) => (
+            {filteredTasks.map((task) => (
               <div key={task.id} className={`task-card status-${task.status}`}>
                 <div className="task-header">
                   <div className="task-info">
