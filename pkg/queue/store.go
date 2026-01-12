@@ -50,10 +50,24 @@ type Task struct {
 	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 }
 
+// TaskEvent represents a change event for a task
+type TaskEvent struct {
+	Type string `json:"type"` // "created", "updated", "deleted"
+	Task *Task  `json:"task"`
+}
+
+// Subscriber receives task change events
+type Subscriber chan TaskEvent
+
+// subscriberBufferSize is the buffer size for subscriber channels
+const subscriberBufferSize = 100
+
 // Store provides SQLite-backed storage for the task queue
 type Store struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db          *sql.DB
+	mu          sync.RWMutex
+	subscribers map[Subscriber]struct{}
+	subMu       sync.RWMutex
 }
 
 // NewStore creates a new queue store with SQLite backend
@@ -95,7 +109,7 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, subscribers: make(map[Subscriber]struct{})}, nil
 }
 
 // Close closes the database connection
@@ -126,7 +140,12 @@ func (s *Store) Add(taskType TaskType, repository string, priority int, params m
 		return nil, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 
-	return s.getByID(id)
+	task, err := s.getByID(id)
+	if err != nil {
+		return nil, err
+	}
+	s.notify("created", task)
+	return task, nil
 }
 
 // Get retrieves a task by ID
@@ -274,6 +293,11 @@ func (s *Store) UpdateStatus(id int64, status TaskStatus, errorMsg string) error
 		`, status, errorMsg, id)
 	}
 
+	if err == nil {
+		if task, getErr := s.getByID(id); getErr == nil {
+			s.notify("updated", task)
+		}
+	}
 	return err
 }
 
@@ -286,6 +310,11 @@ func (s *Store) UpdateProgress(id int64, progress int, progressMsg string, doneB
 		UPDATE tasks SET progress = ?, progress_msg = ?, done_bytes = ?, total_bytes = ?
 		WHERE id = ?
 	`, progress, progressMsg, doneBytes, totalBytes, id)
+	if err == nil {
+		if task, getErr := s.getByID(id); getErr == nil {
+			s.notify("updated", task)
+		}
+	}
 	return err
 }
 
@@ -298,6 +327,11 @@ func (s *Store) UpdatePriority(id int64, priority int) error {
 		UPDATE tasks SET priority = ?
 		WHERE id = ? AND status = 'pending'
 	`, priority, id)
+	if err == nil {
+		if task, getErr := s.getByID(id); getErr == nil {
+			s.notify("updated", task)
+		}
+	}
 	return err
 }
 
@@ -311,7 +345,17 @@ func (s *Store) Delete(id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	// Get task before deleting for notification
+	task, err := s.getByID(id)
+	if err != nil {
+		// Task doesn't exist, nothing to delete
+		return nil
+	}
+
+	_, err = s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	if err == nil {
+		s.notify("deleted", task)
+	}
 	return err
 }
 
@@ -423,4 +467,38 @@ func (s *Store) scanTaskRows(rows *sql.Rows) (*Task, error) {
 	}
 
 	return &task, nil
+}
+
+// Subscribe creates a new subscriber channel for task events
+func (s *Store) Subscribe() Subscriber {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+
+	ch := make(Subscriber, subscriberBufferSize)
+	s.subscribers[ch] = struct{}{}
+	return ch
+}
+
+// Unsubscribe removes a subscriber
+func (s *Store) Unsubscribe(sub Subscriber) {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+
+	delete(s.subscribers, sub)
+	close(sub)
+}
+
+// notify sends a task event to all subscribers
+func (s *Store) notify(eventType string, task *Task) {
+	s.subMu.RLock()
+	defer s.subMu.RUnlock()
+
+	event := TaskEvent{Type: eventType, Task: task}
+	for sub := range s.subscribers {
+		select {
+		case sub <- event:
+		default:
+			// Drop if subscriber is slow
+		}
+	}
 }

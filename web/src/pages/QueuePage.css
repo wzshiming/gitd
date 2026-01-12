@@ -278,3 +278,17 @@
 .btn-danger:hover {
   background-color: #cb2431;
 }
+
+.connection-status {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.connection-status.connected {
+  color: #28a745;
+}
+
+.connection-status.disconnected {
+  color: #6a737d;
+}

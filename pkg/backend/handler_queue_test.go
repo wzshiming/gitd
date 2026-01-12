@@ -237,3 +237,53 @@ func TestQueueAPI(t *testing.T) {
 		}
 	})
 }
+
+// TestQueueEventsSSE tests the SSE endpoint for queue events.
+func TestQueueEventsSSE(t *testing.T) {
+	repoDir, err := os.MkdirTemp("", "gitd-test-queue-sse")
+	if err != nil {
+		t.Fatalf("Failed to create temp repo dir: %v", err)
+	}
+	defer os.RemoveAll(repoDir)
+
+	handler := backend.NewHandler(backend.WithRootDir(repoDir))
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	t.Run("SSEConnection", func(t *testing.T) {
+		resp, err := http.Get(server.URL + "/api/queue/events")
+		if err != nil {
+			t.Fatalf("Failed to connect to SSE endpoint: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+		}
+
+		contentType := resp.Header.Get("Content-Type")
+		if contentType != "text/event-stream" {
+			t.Errorf("Expected Content-Type text/event-stream, got %s", contentType)
+		}
+
+		// Read the initial event
+		buf := make([]byte, 4096)
+		n, err := resp.Body.Read(buf)
+		if err != nil {
+			t.Fatalf("Failed to read SSE data: %v", err)
+		}
+
+		data := string(buf[:n])
+		if !strings.Contains(data, "data:") {
+			t.Errorf("Expected SSE data event, got %s", data)
+		}
+
+		// Verify it contains init event with tasks array
+		if !strings.Contains(data, `"type":"init"`) {
+			t.Errorf("Expected init event, got %s", data)
+		}
+		if !strings.Contains(data, `"tasks":[`) {
+			t.Errorf("Expected tasks array in init event, got %s", data)
+		}
+	})
+}
