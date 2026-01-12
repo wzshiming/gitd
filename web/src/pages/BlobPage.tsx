@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { HiFolderOpen } from 'react-icons/hi';
+import { FaFolderOpen } from 'react-icons/fa';
 import { fetchBlob, fetchBlobMetadata, fetchBranches } from '../api/client';
 import type { BlobContent, Branch } from '../api/client';
 import { FileViewer } from '../components/FileViewer';
@@ -133,7 +133,7 @@ export function BlobPage() {
   return (
     <div className="blob-page">
       <header className="repo-header">
-        <Link to="/" className="home-link"><HiFolderOpen /> gitd</Link>
+        <Link to="/" className="home-link"><FaFolderOpen /> gitd</Link>
       </header>
 
       <div className="repo-toolbar">

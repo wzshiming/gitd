@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaFolder, FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaListAlt } from 'react-icons/fa';
-import { HiFolderOpen } from 'react-icons/hi';
+import { FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaListAlt, FaFolderOpen } from 'react-icons/fa';
+import { prefixIcon } from '../utils/iconUtils';  
 import { fetchRepositories, createRepository, deleteRepository, importRepository, syncRepository } from '../api/client';
 import type { RepositoryItem } from '../api/client';
 import './HomePage.css';
@@ -124,7 +124,7 @@ export function HomePage() {
     <div className="home-page">
       <header className="header">
         <h1>
-          <span className="logo"><HiFolderOpen /></span>
+          <span className="logo"><FaFolderOpen /></span>
           gitd
         </h1>
         <nav className="header-nav">
@@ -150,11 +150,11 @@ export function HomePage() {
             {repos.map((repo) => (
               <li key={repo.name} className="repo-item">
                 <Link to={`/${repo.name}`} className="repo-link">
-                  <span className="repo-icon"><FaFolder /></span>
                   <span className="repo-full-name">
+                    {prefixIcon(repo.name)}
                     <strong>{repo.name}</strong>
-                    {repo.is_mirror && <span className="mirror-badge">Mirror</span>}
                   </span>
+                  {repo.is_mirror && <span className="mirror-badge">Mirror</span>}
                 </Link>
                 <div className="repo-item-actions">
                   {repo.is_mirror && (

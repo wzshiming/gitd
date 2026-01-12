@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown';
+import { FaReadme } from 'react-icons/fa';
 import './ReadmeViewer.css';
 
 interface ReadmeViewerProps {
@@ -9,7 +10,7 @@ export function ReadmeViewer({ content }: ReadmeViewerProps) {
   return (
     <div className="readme-viewer">
       <div className="readme-header">
-        <span className="readme-icon">📖</span>
+        <FaReadme />
         <span className="readme-title">README.md</span>
       </div>
       <div className="readme-content">

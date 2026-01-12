@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
-import { FaListAlt, FaArrowLeft, FaSync, FaClock, FaCheckCircle, FaTimesCircle, FaBan, FaQuestionCircle, FaArrowUp, FaArrowDown, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
+import { FaArrowLeft, FaSync, FaClock, FaCheckCircle, FaTimesCircle, FaBan, FaQuestionCircle, FaArrowUp, FaArrowDown, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import { fetchTasks, cancelTask, updateTaskPriority } from '../api/client';
 import type { Task } from '../api/client';
 import './QueuePage.css';
@@ -91,8 +91,6 @@ export function QueuePage() {
       <header className="header">
         <h1>
           <Link to="/" className="back-link"><FaArrowLeft /></Link>
-          <span className="logo"><FaListAlt /></span>
-          Task Queue
         </h1>
       </header>
 
