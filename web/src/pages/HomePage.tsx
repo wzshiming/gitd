@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaListAlt, FaFolderOpen } from 'react-icons/fa';
-import { prefixIcon } from '../utils/iconUtils';  
+import { prefixIcon } from '../utils/iconUtils';
 import { fetchRepositories, createRepository, deleteRepository, importRepository, syncRepository } from '../api/client';
 import type { RepositoryItem } from '../api/client';
 import './HomePage.css';
@@ -143,7 +143,7 @@ export function HomePage() {
             </button>
           </div>
         </div>
-        {repos.length === 0 ? (
+        {!repos ? (
           <p className="no-repos">No repositories found.</p>
         ) : (
           <ul className="repo-list">
