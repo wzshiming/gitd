@@ -63,8 +63,8 @@ var (
 	// Authentication flags
 	sshAuthorizedKey = ""
 	httpUsername      = ""
-	httpPassword      = ""
-	httpToken         = ""
+	httpPassword     = ""
+	httpToken        = ""
 )
 
 func init() {
