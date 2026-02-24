@@ -18,6 +18,7 @@ import (
 
 var (
 	addr           = ":8080"
+	gitAddr        = ""
 	dataDir        = "./data"
 	s3Repositories = false
 	s3SignEndpoint = ""
@@ -30,6 +31,7 @@ var (
 
 func init() {
 	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
+	flag.StringVar(&gitAddr, "git-addr", "", "Git protocol server address (e.g. :9418)")
 	flag.StringVar(&dataDir, "data", "./data", "Directory containing git repositories")
 	flag.BoolVar(&s3Repositories, "s3-repositories", false, "Store repositories in S3")
 	flag.StringVar(&s3Endpoint, "s3-endpoint", "", "S3 endpoint")
@@ -102,6 +104,19 @@ func main() {
 
 	handler = handlers.CompressHandler(handler)
 	handler = handlers.LoggingHandler(os.Stderr, handler)
+
+	if gitAddr != "" {
+		repositoriesDir := filepath.Join(absRootDir, "repositories")
+		gitServer := gitprotocol.NewServer(repositoriesDir)
+		log.Printf("Starting git protocol server on %s\n", gitAddr)
+		go func() {
+			if err := gitServer.ListenAndServe(gitAddr); err != nil {
+				fmt.Fprintf(os.Stderr, "Error starting git protocol server: %v\n", err)
+				os.Exit(1)
+			}
+		}()
+	}
+
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
 		os.Exit(1)
