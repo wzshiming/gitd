@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -44,6 +47,30 @@ func GenerateHostKey() (ssh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generating host key: %w", err)
 	}
+	return ssh.NewSignerFromKey(priv)
+}
+
+// GenerateAndSaveHostKey generates an ED25519 host key and saves it to the given file path.
+func GenerateAndSaveHostKey(path string) (ssh.Signer, error) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generating host key: %w", err)
+	}
+
+	derBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling host key: %w", err)
+	}
+
+	pemBlock := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: derBytes,
+	}
+
+	if err := os.WriteFile(path, pem.EncodeToMemory(pemBlock), 0600); err != nil {
+		return nil, fmt.Errorf("writing host key to %s: %w", path, err)
+	}
+
 	return ssh.NewSignerFromKey(priv)
 }
 

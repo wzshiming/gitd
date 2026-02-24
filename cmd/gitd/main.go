@@ -126,25 +126,28 @@ func main() {
 	if sshAddr != "" {
 		repositoriesDir := filepath.Join(absRootDir, "repositories")
 		var hostKeySigner backendssh.Signer
-		if sshHostKeyFile != "" {
-			data, err := os.ReadFile(sshHostKeyFile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
-				os.Exit(1)
-			}
+		hostKeyPath := sshHostKeyFile
+		if hostKeyPath == "" {
+			hostKeyPath = filepath.Join(absRootDir, "ssh_host_ed25519_key")
+		}
+		data, err := os.ReadFile(hostKeyPath)
+		if err == nil {
 			hostKeySigner, err = backendssh.ParseHostKeyFile(data)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error parsing SSH host key file: %v\n", err)
 				os.Exit(1)
 			}
+			log.Printf("Loaded SSH host key from %s\n", hostKeyPath)
+		} else if sshHostKeyFile != "" {
+			fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
+			os.Exit(1)
 		} else {
-			var err error
-			hostKeySigner, err = backendssh.GenerateHostKey()
+			hostKeySigner, err = backendssh.GenerateAndSaveHostKey(hostKeyPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error generating SSH host key: %v\n", err)
 				os.Exit(1)
 			}
-			log.Println("No SSH host key file provided, generated a temporary host key")
+			log.Printf("Generated SSH host key and saved to %s\n", hostKeyPath)
 		}
 		sshServer := backendssh.NewServer(repositoriesDir, hostKeySigner)
 		log.Printf("Starting SSH protocol server on %s\n", sshAddr)
