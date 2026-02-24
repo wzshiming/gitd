@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -37,6 +38,17 @@ func Init(repoPath string, defaultBranch string) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	conf, err := repo.Config()
+	if err != nil {
+		return nil, err
+	}
+	conf.Raw.AddOption("receive", "", "shallowUpdate", "true")
+
+	err = repo.SetConfig(conf)
+	if err != nil {
+		return nil, err
+	}
 	return &Repository{
 		repo:     repo,
 		repoPath: repoPath,
@@ -52,6 +64,40 @@ func Open(repoPath string) (*Repository, error) {
 		repo:     repo,
 		repoPath: repoPath,
 	}, nil
+}
+
+func (r *Repository) SplitRevisionAndPath(refpath string) (ref string, path string, err error) {
+	if refpath == "" {
+		return r.DefaultBranch(), "", nil
+	}
+
+	branches, err := r.Branches()
+	if err != nil {
+		return "", "", err
+	}
+
+	// Sort branches by length (longest first) to match the most specific branch
+	sortedBranches := make([]string, len(branches))
+	copy(sortedBranches, branches)
+	sort.Slice(sortedBranches, func(i, j int) bool {
+		return len(sortedBranches[i]) > len(sortedBranches[j])
+	})
+
+	for _, branch := range sortedBranches {
+		if refpath == branch {
+			return branch, "", nil
+		}
+		if strings.HasPrefix(refpath, branch+"/") {
+			return branch, refpath[len(branch)+1:], nil
+		}
+	}
+
+	// Fallback: treat first segment as branch
+	parts := strings.SplitN(refpath, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	}
+	return refpath, "", nil
 }
 
 func (r *Repository) DefaultBranch() string {
@@ -112,29 +158,4 @@ func (r *Repository) IsMirror() (bool, string, error) {
 		}
 	}
 	return isMirror, sourceURL, nil
-}
-
-func (r *Repository) SetMirrorRemote(sourceURL string) error {
-	cfg, err := r.repo.Config()
-	if err != nil {
-		return err
-	}
-	cfg.Init.DefaultBranch = r.DefaultBranch()
-	cfg.Remotes = map[string]*config.RemoteConfig{
-		"origin": {
-			Name:   "origin",
-			URLs:   []string{sourceURL},
-			Mirror: true,
-			Fetch: []config.RefSpec{
-				"+refs/heads/*:refs/heads/*",
-				"+refs/tags/*:refs/tags/*",
-			},
-		},
-	}
-
-	err = r.repo.Storer.SetConfig(cfg)
-	if err != nil {
-		return err
-	}
-	return nil
 }

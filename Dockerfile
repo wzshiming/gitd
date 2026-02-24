@@ -56,7 +56,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM ${IMAGE_PREFIX}library/alpine:${ALPINE_VERSION} AS gitd
 
 RUN --mount=type=cache,target=/var/cache/apk \
-    apk add ca-certificates git && \
+    apk add ca-certificates git s3fs-fuse && \
     update-ca-certificates
 
 COPY --from=builder /gitd /usr/local/bin/gitd

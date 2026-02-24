@@ -52,17 +52,19 @@ func (s *Content) Put(oid string, r io.Reader, size int64) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer func() {
+		_ = os.Remove(file.Name())
+	}()
 
 	hash := sha256.New()
 	hw := io.MultiWriter(hash, file)
 
 	written, err := io.Copy(hw, r)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
-	file.Close()
+	_ = file.Close()
 
 	if written != size {
 		return errSizeMismatch

@@ -2,10 +2,10 @@ package backend_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,12 +15,13 @@ import (
 
 // TestQueueAPI tests the queue management API endpoints.
 func TestQueueAPI(t *testing.T) {
-	repoDir, err := os.MkdirTemp("", "gitd-test-queue")
+	repoDir, err := os.MkdirTemp("", "matrixhub-test-queue")
 	if err != nil {
 		t.Fatalf("Failed to create temp repo dir: %v", err)
 	}
-	defer os.RemoveAll(repoDir)
-
+	defer func() {
+		_ = os.RemoveAll(repoDir)
+	}()
 	handler := backend.NewHandler(backend.WithRootDir(repoDir))
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -30,7 +31,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -58,7 +61,7 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create repository: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("Expected status 201, got %d", resp.StatusCode)
 		}
@@ -74,7 +77,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send import request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusAccepted {
 			t.Errorf("Expected status 202, got %d", resp.StatusCode)
@@ -99,7 +104,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -120,11 +127,13 @@ func TestQueueAPI(t *testing.T) {
 			t.Skip("No task ID from previous test")
 		}
 
-		resp, err := http.Get(server.URL + "/api/queue/" + fmt.Sprintf("%d", taskID))
+		resp, err := http.Get(server.URL + "/api/queue/" + strconv.FormatInt(taskID, 10))
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		// Task might be running/completed, just check we get a response
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
@@ -146,7 +155,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send import request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusAccepted {
 			t.Errorf("Expected status 202, got %d", resp.StatusCode)
@@ -162,14 +173,16 @@ func TestQueueAPI(t *testing.T) {
 		// Update priority
 		priorityBody := strings.NewReader(`{"priority":100}`)
 		priorityReq, _ := http.NewRequest(http.MethodPut,
-			server.URL+"/api/queue/"+fmt.Sprintf("%d", importResp.TaskID)+"/priority",
+			server.URL+"/api/queue/"+strconv.FormatInt(importResp.TaskID, 10)+"/priority",
 			priorityBody)
 		priorityReq.Header.Set("Content-Type", "application/json")
 		priorityResp, err := http.DefaultClient.Do(priorityReq)
 		if err != nil {
 			t.Fatalf("Failed to update priority: %v", err)
 		}
-		defer priorityResp.Body.Close()
+		defer func() {
+			_ = priorityResp.Body.Close()
+		}()
 
 		// Priority update should work for pending tasks
 		if priorityResp.StatusCode != http.StatusOK && priorityResp.StatusCode != http.StatusNotFound {
@@ -187,7 +200,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send import request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusAccepted {
 			t.Errorf("Expected status 202, got %d", resp.StatusCode)
@@ -202,12 +217,14 @@ func TestQueueAPI(t *testing.T) {
 
 		// Cancel the task
 		cancelReq, _ := http.NewRequest(http.MethodDelete,
-			server.URL+"/api/queue/"+fmt.Sprintf("%d", importResp.TaskID), nil)
+			server.URL+"/api/queue/"+strconv.FormatInt(importResp.TaskID, 10), nil)
 		cancelResp, err := http.DefaultClient.Do(cancelReq)
 		if err != nil {
 			t.Fatalf("Failed to cancel task: %v", err)
 		}
-		defer cancelResp.Body.Close()
+		defer func() {
+			_ = cancelResp.Body.Close()
+		}()
 
 		if cancelResp.StatusCode != http.StatusNoContent && cancelResp.StatusCode != http.StatusNotFound {
 			t.Errorf("Expected status 204 or 404, got %d", cancelResp.StatusCode)
@@ -219,7 +236,9 @@ func TestQueueAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)

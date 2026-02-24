@@ -5,59 +5,61 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/gorilla/mux"
+
 	"github.com/wzshiming/gitd/pkg/repository"
 )
 
 func (h *Handler) registryGit(r *mux.Router) {
-	r.HandleFunc("/{repo:.+}.git/info/refs", h.requireAuth(h.handleInfoRefs)).Methods(http.MethodGet)
-	r.HandleFunc("/{repo:.+}/info/refs", h.requireAuth(h.handleInfoRefs)).Methods(http.MethodGet)
-	r.HandleFunc("/{repo:.+}.git/git-upload-pack", h.requireAuth(h.handleUploadPack)).Methods(http.MethodPost)
-	r.HandleFunc("/{repo:.+}/git-upload-pack", h.requireAuth(h.handleUploadPack)).Methods(http.MethodPost)
-	r.HandleFunc("/{repo:.+}.git/git-receive-pack", h.requireAuth(h.handleReceivePack)).Methods(http.MethodPost)
-	r.HandleFunc("/{repo:.+}/git-receive-pack", h.requireAuth(h.handleReceivePack)).Methods(http.MethodPost)
+	r.HandleFunc("/{repo:.+}.git/info/refs", h.handleInfoRefs).Methods(http.MethodGet)
+	r.HandleFunc("/{repo:.+}/info/refs", h.handleInfoRefs).Methods(http.MethodGet)
+	r.HandleFunc("/{repo:.+}.git/git-upload-pack", h.handleUploadPack).Methods(http.MethodPost)
+	r.HandleFunc("/{repo:.+}/git-upload-pack", h.handleUploadPack).Methods(http.MethodPost)
+	r.HandleFunc("/{repo:.+}.git/git-receive-pack", h.handleReceivePack).Methods(http.MethodPost)
+	r.HandleFunc("/{repo:.+}/git-receive-pack", h.handleReceivePack).Methods(http.MethodPost)
 }
 
 // handleInfoRefs handles the /info/refs endpoint for git service discovery.
 func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"] + ".git"
+	repoName := vars["repo"]
 
 	service := r.URL.Query().Get("service")
 	if service == "" {
-		http.Error(w, "service parameter is required", http.StatusBadRequest)
+		h.Text(w, "service parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	if service != "git-upload-pack" && service != "git-receive-pack" {
-		http.Error(w, "unsupported service", http.StatusForbidden)
+		h.Text(w, "unsupported service", http.StatusForbidden)
 		return
 	}
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
-		http.NotFound(w, r)
+		h.Text(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
 		return
 	}
 
 	repo, err := repository.Open(repoPath)
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
-			http.NotFound(w, r)
+			h.Text(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
 			return
 		}
-		http.Error(w, "Failed to open repository", http.StatusInternalServerError)
+		h.Text(w, fmt.Sprintf("Failed to open repository %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 	if service == "git-receive-pack" {
 		isMirror, _, err := repo.IsMirror()
 		if err != nil {
-			http.Error(w, "Failed to check repository type", http.StatusInternalServerError)
+			h.Text(w, fmt.Sprintf("Failed to check repository type for %q: %v", repoName, err), http.StatusInternalServerError)
 			return
 		}
 		if isMirror {
-			http.Error(w, "push to mirror repository is not allowed", http.StatusForbidden)
+			h.Text(w, fmt.Sprintf("push to mirror repository %q is not allowed", repoName), http.StatusForbidden)
 			return
 		}
 	}
@@ -67,7 +69,7 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 
 	err = repo.Stateless(r.Context(), w, nil, service, true)
 	if err != nil {
-		http.Error(w, "Failed to get info refs", http.StatusInternalServerError)
+		h.Text(w, fmt.Sprintf("Failed to get info refs for %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 }
@@ -85,41 +87,41 @@ func (h *Handler) handleReceivePack(w http.ResponseWriter, r *http.Request) {
 // handleService handles a git service request.
 func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service string) {
 	vars := mux.Vars(r)
-	repoName := vars["repo"] + ".git"
+	repoName := vars["repo"]
 
 	repoPath := h.resolveRepoPath(repoName)
 	if repoPath == "" {
-		http.NotFound(w, r)
+		h.Text(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
 		return
 	}
 
 	repo, err := repository.Open(repoPath)
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
-			http.NotFound(w, r)
+			h.Text(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
 			return
 		}
-		http.Error(w, "Failed to open repository", http.StatusInternalServerError)
+		h.Text(w, fmt.Sprintf("Failed to open repository %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 	if service == "git-receive-pack" {
 		isMirror, _, err := repo.IsMirror()
 		if err != nil {
-			http.Error(w, "Failed to check repository type", http.StatusInternalServerError)
+			h.Text(w, fmt.Sprintf("Failed to check repository type for %q: %v", repoName, err), http.StatusInternalServerError)
 			return
 		}
 		if isMirror {
-			http.Error(w, "push to mirror repository is not allowed", http.StatusForbidden)
+			h.Text(w, fmt.Sprintf("push to mirror repository %q is not allowed", repoName), http.StatusForbidden)
 			return
 		}
 	}
 
-	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", service))
+	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-result", service))
 	w.Header().Set("Cache-Control", "no-cache")
 
 	err = repo.Stateless(r.Context(), w, r.Body, service, false)
 	if err != nil {
-		http.Error(w, "Failed to get info refs", http.StatusInternalServerError)
+		h.Text(w, fmt.Sprintf("Failed to get info refs for %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 }
@@ -128,6 +130,10 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 func (h *Handler) resolveRepoPath(urlPath string) string {
 	if urlPath == "" {
 		return ""
+	}
+
+	if !strings.HasSuffix(urlPath, ".git") {
+		urlPath += ".git"
 	}
 
 	// Construct the full path

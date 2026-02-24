@@ -56,7 +56,7 @@ type Action struct {
 	Href      string            `json:"href"`
 	Header    map[string]string `json:"header,omitempty"`
 	ExpiresIn int               `json:"expires_in,omitempty"`
-	ExpiresAt time.Time         `json:"expires_at,omitempty"`
+	ExpiresAt time.Time         `json:"expires_at"`
 }
 
 // ObjectError represents an error for an object in a batch response
@@ -91,10 +91,7 @@ func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFS
 
 	batchObjects := make([]BatchObject, len(objects))
 	for i, obj := range objects {
-		batchObjects[i] = BatchObject{
-			Oid:  obj.Oid,
-			Size: obj.Size,
-		}
+		batchObjects[i] = BatchObject(obj)
 	}
 
 	reqBody := BatchRequest{
@@ -115,12 +112,15 @@ func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFS
 
 	req.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	req.Header.Set("Accept", "application/vnd.git-lfs+json")
+	req.Header.Set("User-Agent", "go-git/5.x")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute batch request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

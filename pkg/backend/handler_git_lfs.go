@@ -3,10 +3,8 @@ package backend
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,11 +17,11 @@ const (
 )
 
 func (h *Handler) registryLFS(r *mux.Router) {
-	r.HandleFunc("/{repo:.+}.git/info/lfs/objects/batch", h.requireAuth(h.handleBatch)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}/info/lfs/objects/batch", h.requireAuth(h.handleBatch)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/objects/{oid}", h.requireAuth(h.handleGetContent)).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc("/objects/{oid}", h.requireAuth(h.handlePutContent)).Methods(http.MethodPut)
-	r.HandleFunc("/objects/{oid}/verify", h.requireAuth(h.handleVerifyObject)).Methods(http.MethodPost)
+	r.HandleFunc("/{repo:.+}.git/info/lfs/objects/batch", h.handleBatch).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}/info/lfs/objects/batch", h.handleBatch).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/objects/{oid}", h.handleGetContent).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc("/objects/{oid}", h.handlePutContent).Methods(http.MethodPut)
+	r.HandleFunc("/objects/{oid}/verify", h.handleVerifyObject).Methods(http.MethodPost)
 }
 
 // handleBatch provides the batch api
@@ -34,7 +32,14 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Create a response object
 	for _, object := range bv.Objects {
-		exists := h.contentStore.Exists(object.Oid)
+		var exists bool
+		if h.s3Store != nil {
+			fi, _ := h.s3Store.Info(object.Oid)
+			exists = fi != nil
+		} else {
+			exists = h.contentStore.Exists(object.Oid)
+		}
+
 		if exists { // Object is found and exists
 			responseObjects = append(responseObjects, lfsRepresent(object, true, false))
 			continue
@@ -63,15 +68,23 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 		Objects:  responseObjects,
 	}
 
-	enc := json.NewEncoder(w)
-	enc.Encode(respobj)
+	h.JSON(w, respobj, http.StatusOK)
 }
 
 // handlePutContent receives data from the client and puts it into the content store
 func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
+	if h.s3Store != nil {
+		url, err := h.s3Store.SignPut(rv.Oid)
+		if err != nil {
+			h.Text(w, fmt.Sprintf("failed to sign S3 URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		return
+	}
 	if err := h.contentStore.Put(rv.Oid, r.Body, r.ContentLength); err != nil {
-		http.Error(w, "Failed to store content", http.StatusInternalServerError)
+		h.Text(w, fmt.Sprintf("failed to put LFS object %s: %v", rv.Oid, err), http.StatusInternalServerError)
 		return
 	}
 }
@@ -79,36 +92,63 @@ func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 // handleGetContent gets the content from the content store
 func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
-	content, stat, err := h.contentStore.Get(rv.Oid)
-	if err != nil {
-		log.Println("Error getting LFS object:", err)
-		http.NotFound(w, r)
+	if h.s3Store != nil {
+		url, err := h.s3Store.SignGet(rv.Oid)
+		if err != nil {
+			h.Text(w, fmt.Sprintf("failed to sign S3 URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
-	defer content.Close()
-
-	filename := r.URL.Query().Get("filename")
-	if filename != "" {
-		w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filename))
+	content, stat, err := h.contentStore.Get(rv.Oid)
+	if err != nil {
+		if os.IsNotExist(err) {
+			h.Text(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
+			return
+		}
+		h.Text(w, fmt.Sprintf("failed to get LFS object %s: %v", rv.Oid, err), http.StatusInternalServerError)
+		return
 	}
+	defer func() {
+		_ = content.Close()
+	}()
 
-	http.ServeContent(w, r, "", stat.ModTime(), content)
+	w.Header().Set("ETag", fmt.Sprintf("\"%s\"", rv.Oid))
+	http.ServeContent(w, r, rv.Oid, stat.ModTime(), content)
 }
 
 func (h *Handler) handleVerifyObject(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
-	info, err := h.contentStore.Info(rv.Oid)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			http.Error(w, "Failed to verify object", http.StatusInternalServerError)
+	if h.s3Store != nil {
+		info, err := h.s3Store.Info(rv.Oid)
+		if err != nil {
+			if os.IsNotExist(err) {
+				h.Text(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
+				return
+			}
+			h.Text(w, fmt.Sprintf("failed to get LFS object %s info: %v", rv.Oid, err), http.StatusInternalServerError)
 			return
 		}
-		http.NotFound(w, r)
+
+		if info.Size() != rv.Size {
+			h.Text(w, "Size mismatch", http.StatusBadRequest)
+			return
+		}
+		return
+	}
+	info, err := h.contentStore.Info(rv.Oid)
+	if err != nil {
+		if os.IsNotExist(err) {
+			h.Text(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
+			return
+		}
+		h.Text(w, fmt.Sprintf("failed to get LFS object %s info: %v", rv.Oid, err), http.StatusInternalServerError)
 		return
 	}
 
 	if info.Size() != rv.Size {
-		http.Error(w, "Size mismatch", http.StatusBadRequest)
+		h.Text(w, "Size mismatch", http.StatusBadRequest)
 		return
 	}
 }
@@ -146,7 +186,7 @@ func lfsRepresent(rv *lfsRequestVars, download, upload bool) *lfsRepresentation 
 func unpack(r *http.Request) *lfsRequestVars {
 	vars := mux.Vars(r)
 	rv := &lfsRequestVars{
-		Repo:          vars["repo"] + ".git",
+		Repo:          vars["repo"],
 		Oid:           vars["oid"],
 		Authorization: r.Header.Get("Authorization"),
 	}
@@ -186,8 +226,8 @@ func unpackBatch(r *http.Request) *lfsBatchVars {
 	}
 	origin := fmt.Sprintf("%s://%s", scheme, r.Host)
 
-	for i := 0; i < len(bv.Objects); i++ {
-		bv.Objects[i].Repo = vars["repo"] + ".git"
+	for i := range len(bv.Objects) {
+		bv.Objects[i].Repo = vars["repo"]
 		bv.Objects[i].Authorization = r.Header.Get("Authorization")
 		bv.Objects[i].Origin = origin
 	}
@@ -242,7 +282,7 @@ type lfsObjectError struct {
 type lfsLink struct {
 	Href      string            `json:"href"`
 	Header    map[string]string `json:"header,omitempty"`
-	ExpiresAt time.Time         `json:"expires_at,omitempty"`
+	ExpiresAt time.Time         `json:"expires_at"`
 }
 
 // metaMatcher provides a mux.MatcherFunc that only allows requests that contain

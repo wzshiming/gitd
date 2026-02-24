@@ -10,15 +10,15 @@ import (
 )
 
 func (r *Repository) Commits(ref string, limit int) ([]Commit, error) {
-	refObj, err := r.repo.Reference(plumbing.ReferenceName("refs/heads/"+ref), true)
+	if ref == "" {
+		ref = r.DefaultBranch()
+	}
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(ref))
 	if err != nil {
-		if err == plumbing.ErrReferenceNotFound {
-			return []Commit{}, nil
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve revision: %w", err)
 	}
 
-	commitIter, err := r.repo.Log(&git.LogOptions{From: refObj.Hash()})
+	commitIter, err := r.repo.Log(&git.LogOptions{From: *hash})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit log: %w", err)
 	}

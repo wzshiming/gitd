@@ -1,7 +1,9 @@
 package backend
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -9,9 +11,10 @@ import (
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+	"github.com/wzshiming/httpseek"
+
 	"github.com/wzshiming/gitd/pkg/lfs"
 	"github.com/wzshiming/gitd/pkg/queue"
-	"github.com/wzshiming/httpseek"
 )
 
 type Authenticator interface {
@@ -30,6 +33,7 @@ type Handler struct {
 
 	locksStore   *lfs.LockDB
 	contentStore *lfs.Content
+	s3Store      *lfs.S3
 	queueStore   *queue.Store
 	queueWorker  *queue.Worker
 	root         *mux.Router
@@ -58,6 +62,13 @@ func WithQueueWorkers(count int) Option {
 		if h.queueStore != nil {
 			h.queueWorker = queue.NewWorker(h.queueStore, count)
 		}
+	}
+}
+
+// WithLFSS3 configures the LFS S3 storage backend.
+func WithLFSS3(s3Store *lfs.S3) Option {
+	return func(h *Handler) {
+		h.s3Store = s3Store
 	}
 }
 
@@ -109,15 +120,36 @@ func (h *Handler) Close() {
 		h.queueWorker.Stop()
 	}
 	if h.queueStore != nil {
-		h.queueStore.Close()
+		_ = h.queueStore.Close()
 	}
 	if h.locksStore != nil {
-		h.locksStore.Close()
+		_ = h.locksStore.Close()
 	}
 }
 
 // ServeHTTP implements the http.Handler interface.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.authenticate == nil {
+		context.Set(r, "USER", "anonymous")
+		h.root.ServeHTTP(w, r)
+		return
+	}
+
+	user, password, ok := r.BasicAuth()
+	if !ok {
+		w.Header().Set("WWW-Authenticate", `Basic realm="matrixhub"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	name, ret := h.authenticate.Authenticate(user, password)
+	if !ret {
+		w.Header().Set("WWW-Authenticate", `Basic realm="matrixhub"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	context.Set(r, "USER", name)
 	h.root.ServeHTTP(w, r)
 }
 
@@ -136,6 +168,9 @@ func (h *Handler) router() *mux.Router {
 	h.registryRepositoriesInfo(r)
 	h.registryRepositories(r)
 
+	// HuggingFace-compatible API endpoints
+	h.registryHuggingFace(r)
+
 	// Queue management endpoints
 	h.registryQueue(r)
 
@@ -144,29 +179,63 @@ func (h *Handler) router() *mux.Router {
 	return r
 }
 
-func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if h.authenticate == nil {
-			context.Set(r, "USER", "anonymous")
-			next(w, r)
-			return
-		}
-
-		user, password, ok := r.BasicAuth()
-		if !ok {
-			w.Header().Set("WWW-Authenticate", `Basic realm="gitd"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		name, ret := h.authenticate.Authenticate(user, password)
-		if !ret {
-			w.Header().Set("WWW-Authenticate", `Basic realm="gitd"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		context.Set(r, "USER", name)
-		next(w, r)
+func (h *Handler) Text(w http.ResponseWriter, text string, sc int) {
+	header := w.Header()
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", "text/plain; charset=utf-8")
 	}
+
+	if sc >= http.StatusBadRequest {
+		header.Del("Content-Length")
+		header.Set("X-Content-Type-Options", "nosniff")
+	}
+
+	if sc != 0 {
+		w.WriteHeader(sc)
+	}
+
+	if text == "" {
+		return
+	}
+
+	_, _ = io.WriteString(w, text)
+}
+
+func (h *Handler) JSON(w http.ResponseWriter, data any, sc int) {
+	header := w.Header()
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", "application/json; charset=utf-8")
+	}
+
+	if sc >= http.StatusBadRequest {
+		header.Del("Content-Length")
+		header.Set("X-Content-Type-Options", "nosniff")
+	}
+
+	if sc != 0 {
+		w.WriteHeader(sc)
+	}
+
+	if data == nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+
+	switch t := data.(type) {
+	case error:
+		var dataErr struct {
+			Error string `json:"error"`
+		}
+		dataErr.Error = t.Error()
+		data = dataErr
+	case string:
+		var dataErr struct {
+			Error string `json:"error"`
+		}
+		dataErr.Error = t
+		data = dataErr
+	}
+
+	enc := json.NewEncoder(w)
+	_ = enc.Encode(data)
 }

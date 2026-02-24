@@ -2,24 +2,26 @@ package backend
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
+
 	"github.com/wzshiming/gitd/pkg/queue"
 )
 
 func (h *Handler) registryQueue(r *mux.Router) {
-	r.HandleFunc("/api/queue", h.requireAuth(h.handleListTasks)).Methods(http.MethodGet)
-	r.HandleFunc("/api/queue/{id:[0-9]+}", h.requireAuth(h.handleGetTask)).Methods(http.MethodGet)
-	r.HandleFunc("/api/queue/{id:[0-9]+}/priority", h.requireAuth(h.handleUpdateTaskPriority)).Methods(http.MethodPut)
-	r.HandleFunc("/api/queue/{id:[0-9]+}", h.requireAuth(h.handleCancelTask)).Methods(http.MethodDelete)
+	r.HandleFunc("/api/queue", h.handleListTasks).Methods(http.MethodGet)
+	r.HandleFunc("/api/queue/{id:[0-9]+}", h.handleGetTask).Methods(http.MethodGet)
+	r.HandleFunc("/api/queue/{id:[0-9]+}/priority", h.handleUpdateTaskPriority).Methods(http.MethodPut)
+	r.HandleFunc("/api/queue/{id:[0-9]+}", h.handleCancelTask).Methods(http.MethodDelete)
 }
 
 // handleListTasks returns all tasks in the queue
 func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	if h.queueStore == nil {
-		http.Error(w, "Queue not initialized", http.StatusServiceUnavailable)
+		h.JSON(w, fmt.Errorf("queue not initialized"), http.StatusServiceUnavailable)
 		return
 	}
 
@@ -38,17 +40,18 @@ func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	var tasks []*queue.Task
 	var err error
 
-	if repoFilter != "" {
+	switch {
+	case repoFilter != "":
 		tasks, err = h.queueStore.ListByRepository(repoFilter)
-	} else if statusStr != "" {
+	case statusStr != "":
 		status := queue.TaskStatus(statusStr)
 		tasks, err = h.queueStore.List(&status, limit)
-	} else {
+	default:
 		tasks, err = h.queueStore.List(nil, limit)
 	}
 
 	if err != nil {
-		http.Error(w, "Failed to list tasks", http.StatusInternalServerError)
+		h.JSON(w, fmt.Errorf("failed to list tasks: %w", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -57,32 +60,30 @@ func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		tasks = []*queue.Task{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tasks)
+	h.JSON(w, tasks, http.StatusOK)
 }
 
 // handleGetTask returns a specific task by ID
 func (h *Handler) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	if h.queueStore == nil {
-		http.Error(w, "Queue not initialized", http.StatusServiceUnavailable)
+		h.JSON(w, fmt.Errorf("queue not initialized"), http.StatusServiceUnavailable)
 		return
 	}
 
 	vars := mux.Vars(r)
 	id, err := strconv.ParseInt(vars["id"], 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		h.JSON(w, fmt.Errorf("invalid task ID"), http.StatusBadRequest)
 		return
 	}
 
 	task, err := h.queueStore.Get(id)
 	if err != nil {
-		http.NotFound(w, r)
+		h.JSON(w, fmt.Errorf("task not found"), http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(task)
+	h.JSON(w, task, http.StatusOK)
 }
 
 // updatePriorityRequest represents a request to update task priority
@@ -93,50 +94,49 @@ type updatePriorityRequest struct {
 // handleUpdateTaskPriority updates the priority of a task
 func (h *Handler) handleUpdateTaskPriority(w http.ResponseWriter, r *http.Request) {
 	if h.queueStore == nil {
-		http.Error(w, "Queue not initialized", http.StatusServiceUnavailable)
+		h.JSON(w, fmt.Errorf("queue not initialized"), http.StatusServiceUnavailable)
 		return
 	}
 
 	vars := mux.Vars(r)
 	id, err := strconv.ParseInt(vars["id"], 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		h.JSON(w, fmt.Errorf("invalid task ID"), http.StatusBadRequest)
 		return
 	}
 
 	var req updatePriorityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.JSON(w, fmt.Errorf("invalid request body"), http.StatusBadRequest)
 		return
 	}
 
 	err = h.queueStore.UpdatePriority(id, req.Priority)
 	if err != nil {
-		http.Error(w, "Failed to update priority", http.StatusInternalServerError)
+		h.JSON(w, fmt.Errorf("failed to update priority: %w", err), http.StatusInternalServerError)
 		return
 	}
 
 	task, err := h.queueStore.Get(id)
 	if err != nil {
-		http.NotFound(w, r)
+		h.JSON(w, fmt.Errorf("task not found"), http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(task)
+	h.JSON(w, task, http.StatusOK)
 }
 
 // handleCancelTask cancels a task
 func (h *Handler) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	if h.queueStore == nil {
-		http.Error(w, "Queue not initialized", http.StatusServiceUnavailable)
+		h.JSON(w, fmt.Errorf("queue not initialized"), http.StatusServiceUnavailable)
 		return
 	}
 
 	vars := mux.Vars(r)
 	id, err := strconv.ParseInt(vars["id"], 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		h.JSON(w, fmt.Errorf("invalid task ID"), http.StatusBadRequest)
 		return
 	}
 
@@ -147,9 +147,9 @@ func (h *Handler) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 
 	err = h.queueStore.Cancel(id)
 	if err != nil {
-		http.Error(w, "Failed to cancel task", http.StatusInternalServerError)
+		h.JSON(w, fmt.Errorf("failed to cancel task: %w", err), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.JSON(w, nil, http.StatusNoContent)
 }
