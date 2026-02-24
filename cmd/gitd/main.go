@@ -37,7 +37,7 @@ func init() {
 	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
 	flag.StringVar(&gitAddr, "git-addr", "", "Git protocol server address (e.g. :9418)")
 	flag.StringVar(&sshAddr, "ssh-addr", "", "SSH protocol server address (e.g. :2222)")
-	flag.StringVar(&sshHostKeyFile, "ssh-host-key", "", "Path to SSH host key file (PEM format); if empty, a key is generated)")
+	flag.StringVar(&sshHostKeyFile, "ssh-host-key", "", "Path to SSH host key file (PEM format); if empty, a key is generated")
 	flag.StringVar(&dataDir, "data", "./data", "Directory containing git repositories")
 	flag.BoolVar(&s3Repositories, "s3-repositories", false, "Store repositories in S3")
 	flag.StringVar(&s3Endpoint, "s3-endpoint", "", "S3 endpoint")
