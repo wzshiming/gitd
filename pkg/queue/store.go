@@ -1,9 +1,9 @@
-// Package queue provides a SQLite-backed task queue for background processing.
 package queue
 
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,7 +91,7 @@ func NewStore(dbPath string) (*Store, error) {
 		CREATE INDEX IF NOT EXISTS idx_tasks_repository ON tasks(repository);
 	`)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
@@ -125,7 +125,7 @@ func (s *Store) Add(taskType TaskType, repository string, priority int, params m
 	}
 
 	if existingCount > 0 {
-		return 0, fmt.Errorf("a task with the same parameters is already in progress")
+		return 0, errors.New("a task with the same parameters is already in progress")
 	}
 
 	result, err := s.db.Exec(`
@@ -167,7 +167,7 @@ func (s *Store) List(status *TaskStatus, limit int) ([]*Task, error) {
 	defer s.mu.RUnlock()
 
 	var query string
-	var args []interface{}
+	var args []any
 
 	if status != nil {
 		query = `
@@ -177,7 +177,7 @@ func (s *Store) List(status *TaskStatus, limit int) ([]*Task, error) {
 			ORDER BY priority DESC, created_at ASC
 			LIMIT ?
 		`
-		args = []interface{}{*status, limit}
+		args = []any{*status, limit}
 	} else {
 		query = `
 			SELECT id, type, status, priority, repository, params, progress, progress_msg,
@@ -192,14 +192,16 @@ func (s *Store) List(status *TaskStatus, limit int) ([]*Task, error) {
 				priority DESC, created_at ASC
 			LIMIT ?
 		`
-		args = []interface{}{limit}
+		args = []any{limit}
 	}
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var tasks []*Task
 	for rows.Next() {
@@ -228,7 +230,9 @@ func (s *Store) ListByRepository(repository string) ([]*Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var tasks []*Task
 	for rows.Next() {
@@ -275,8 +279,8 @@ func (s *Store) UpdateStatus(id int64, status TaskStatus, errorMsg string) error
 	case TaskStatusRunning:
 		_, err = s.db.Exec(`
 			UPDATE tasks SET status = ?, started_at = ?, error = NULL
-			WHERE id = ?
-		`, status, now, id)
+			WHERE id = ? AND status = ?
+		`, status, now, id, TaskStatusPending)
 	case TaskStatusCompleted, TaskStatusFailed, TaskStatusCancelled:
 		_, err = s.db.Exec(`
 			UPDATE tasks SET status = ?, completed_at = ?, error = ?

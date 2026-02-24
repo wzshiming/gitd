@@ -4,30 +4,49 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gorilla/handlers"
+
+	"github.com/wzshiming/gitd/internal/utils"
 	"github.com/wzshiming/gitd/pkg/backend"
 )
+
+// runGitLFSCmd runs a git-lfs command in the specified directory.
+func runGitLFSCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	fullArgs := append([]string{"lfs"}, args...)
+	cmd := utils.Command(t.Context(), "git", fullArgs...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Git LFS command failed: git lfs %s\nError: %v\nOutput: %s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
 
 // TestGitLFSServer tests the Git LFS server using git-lfs binary.
 func TestGitLFSServer(t *testing.T) {
 	// Create a temporary directory for repositories
-	repoDir, err := os.MkdirTemp("", "gitd-lfs-test-repos")
+	repoDir, err := os.MkdirTemp("", "matrixhub-lfs-test-repos")
 	if err != nil {
 		t.Fatalf("Failed to create temp repo dir: %v", err)
 	}
-	defer os.RemoveAll(repoDir)
+	defer func() {
+		_ = os.RemoveAll(repoDir)
+	}()
 
 	// Create a temporary directory for client operations
-	clientDir, err := os.MkdirTemp("", "gitd-lfs-test-client")
+	clientDir, err := os.MkdirTemp("", "matrixhub-lfs-test-client")
 	if err != nil {
 		t.Fatalf("Failed to create temp client dir: %v", err)
 	}
-	defer os.RemoveAll(clientDir)
+	defer func() {
+		_ = os.RemoveAll(clientDir)
+	}()
 
 	// Create handler and test server
 	handler := handlers.LoggingHandler(os.Stderr, backend.NewHandler(backend.WithRootDir(repoDir)))
@@ -48,7 +67,9 @@ func TestGitLFSServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusCreated {
 			t.Errorf("Expected status 201, got %d", resp.StatusCode)
@@ -59,38 +80,27 @@ func TestGitLFSServer(t *testing.T) {
 
 	t.Run("CloneAndConfigureLFS", func(t *testing.T) {
 		// Clone the repository
-		cmd := exec.Command("git", "clone", repoURL, workDir)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to clone repository: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, "", "clone", repoURL, workDir)
 
 		// Configure git user
-		runGitCommand(t, workDir, "config", "user.email", "test@test.com")
-		runGitCommand(t, workDir, "config", "user.name", "Test User")
+		runGitCmd(t, workDir, "config", "user.email", "test@test.com")
+		runGitCmd(t, workDir, "config", "user.name", "Test User")
 
 		// Initialize LFS
-		runGitLFSCommand(t, workDir, "install", "--local")
+		runGitLFSCmd(t, workDir, "install", "--local")
 
 		// Track binary files with LFS
-		runGitLFSCommand(t, workDir, "track", "*.bin")
-		runGitLFSCommand(t, workDir, "track", "*.dat")
+		runGitLFSCmd(t, workDir, "track", "*.bin")
+		runGitLFSCmd(t, workDir, "track", "*.dat")
 
 		// Commit .gitattributes
-		runGitCommand(t, workDir, "add", ".gitattributes")
-		runGitCommand(t, workDir, "commit", "-m", "Configure LFS tracking")
+		runGitCmd(t, workDir, "add", ".gitattributes")
+		runGitCmd(t, workDir, "commit", "-m", "Configure LFS tracking")
 	})
 
 	t.Run("PushLFSTracking", func(t *testing.T) {
 		// Push initial commit with .gitattributes
-		cmd := exec.Command("git", "push", "-u", "origin", "HEAD")
-		cmd.Dir = workDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to push LFS tracking: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, workDir, "push", "-u", "origin", "HEAD")
 	})
 
 	// Test uploading a small binary file
@@ -106,26 +116,16 @@ func TestGitLFSServer(t *testing.T) {
 		}
 
 		// Add and commit
-		runGitCommand(t, workDir, "add", "small.bin")
-		runGitCommand(t, workDir, "commit", "-m", "Add small binary file")
+		runGitCmd(t, workDir, "add", "small.bin")
+		runGitCmd(t, workDir, "commit", "-m", "Add small binary file")
 
 		// Push with LFS
-		cmd := exec.Command("git", "push")
-		cmd.Dir = workDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to push LFS file: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, workDir, "push")
 
 		// Verify LFS is tracking the file
-		cmd = exec.Command("git", "lfs", "ls-files")
-		cmd.Dir = workDir
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to list LFS files: %v\nOutput: %s", err, output)
-		}
-		if !strings.Contains(string(output), "small.bin") {
+		output := runGitLFSCmd(t, workDir, "ls-files")
+
+		if !strings.Contains(output, "small.bin") {
 			t.Errorf("small.bin should be tracked by LFS, got: %s", output)
 		}
 	})
@@ -143,17 +143,11 @@ func TestGitLFSServer(t *testing.T) {
 		}
 
 		// Add and commit
-		runGitCommand(t, workDir, "add", "large.dat")
-		runGitCommand(t, workDir, "commit", "-m", "Add large binary file")
+		runGitCmd(t, workDir, "add", "large.dat")
+		runGitCmd(t, workDir, "commit", "-m", "Add large binary file")
 
 		// Push with LFS
-		cmd := exec.Command("git", "push")
-		cmd.Dir = workDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to push large LFS file: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, workDir, "push")
 	})
 
 	// Test cloning with LFS content
@@ -161,15 +155,10 @@ func TestGitLFSServer(t *testing.T) {
 		cloneDir := filepath.Join(clientDir, "lfs-clone")
 
 		// Clone the repository
-		cmd := exec.Command("git", "clone", repoURL, cloneDir)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to clone repository: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, "", "clone", repoURL, cloneDir)
 
 		// Pull LFS content
-		runGitLFSCommand(t, cloneDir, "pull")
+		runGitLFSCmd(t, cloneDir, "pull")
 
 		// Verify small.bin content
 		smallBin := filepath.Join(cloneDir, "small.bin")
@@ -203,13 +192,7 @@ func TestGitLFSServer(t *testing.T) {
 	t.Run("LFSFetch", func(t *testing.T) {
 		cloneDir := filepath.Join(clientDir, "lfs-clone")
 
-		cmd := exec.Command("git", "lfs", "fetch", "--all")
-		cmd.Dir = cloneDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to fetch LFS objects: %v\nOutput: %s", err, output)
-		}
+		runGitLFSCmd(t, cloneDir, "fetch", "--all")
 	})
 
 	// Test updating LFS file
@@ -225,17 +208,11 @@ func TestGitLFSServer(t *testing.T) {
 		}
 
 		// Add and commit
-		runGitCommand(t, workDir, "add", "small.bin")
-		runGitCommand(t, workDir, "commit", "-m", "Update small binary file")
+		runGitCmd(t, workDir, "add", "small.bin")
+		runGitCmd(t, workDir, "commit", "-m", "Update small binary file")
 
 		// Push
-		cmd := exec.Command("git", "push")
-		cmd.Dir = workDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to push updated LFS file: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, workDir, "push")
 	})
 
 	// Test pulling updated LFS content
@@ -243,13 +220,7 @@ func TestGitLFSServer(t *testing.T) {
 		cloneDir := filepath.Join(clientDir, "lfs-clone")
 
 		// Pull changes
-		cmd := exec.Command("git", "pull")
-		cmd.Dir = cloneDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to pull: %v\nOutput: %s", err, output)
-		}
+		runGitCmd(t, cloneDir, "pull")
 
 		// Verify updated content
 		smallBin := filepath.Join(cloneDir, "small.bin")
@@ -264,13 +235,7 @@ func TestGitLFSServer(t *testing.T) {
 
 	// Test LFS status
 	t.Run("LFSStatus", func(t *testing.T) {
-		cmd := exec.Command("git", "lfs", "status")
-		cmd.Dir = workDir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Failed to get LFS status: %v\nOutput: %s", err, output)
-		}
+		runGitLFSCmd(t, workDir, "status")
 	})
 
 	// Cleanup
@@ -284,23 +249,12 @@ func TestGitLFSServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusNoContent {
 			t.Errorf("Expected status 204, got %d", resp.StatusCode)
 		}
 	})
-}
-
-// runGitLFSCommand runs a git-lfs command in the specified directory.
-func runGitLFSCommand(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	fullArgs := append([]string{"lfs"}, args...)
-	cmd := exec.Command("git", fullArgs...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Git LFS command failed: git lfs %s\nError: %v\nOutput: %s", strings.Join(args, " "), err, output)
-	}
 }

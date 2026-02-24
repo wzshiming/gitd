@@ -2,43 +2,43 @@ package backend
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+
 	"github.com/wzshiming/gitd/pkg/lfs"
 )
 
 var (
-	ErrNotOwner = errors.New("Attempt to delete other user's lock")
+	ErrNotOwner = errors.New("attempt to delete other user's lock")
 )
 
 func (h *Handler) registryLFSLock(r *mux.Router) {
-	r.HandleFunc("/{repo:.+}.git/locks", h.requireAuth(h.handleGetLock)).Methods(http.MethodGet).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}/locks", h.requireAuth(h.handleGetLock)).Methods(http.MethodGet).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}.git/locks/verify", h.requireAuth(h.handleLocksVerify)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}/locks/verify", h.requireAuth(h.handleLocksVerify)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}.git/locks", h.requireAuth(h.handleCreateLock)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}/locks", h.requireAuth(h.handleCreateLock)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}.git/locks/{id}/unlock", h.requireAuth(h.handleDeleteLock)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
-	r.HandleFunc("/{repo:.+}/locks/{id}/unlock", h.requireAuth(h.handleDeleteLock)).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}.git/locks", h.handleGetLock).Methods(http.MethodGet).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}/locks", h.handleGetLock).Methods(http.MethodGet).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}.git/locks/verify", h.handleLocksVerify).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}/locks/verify", h.handleLocksVerify).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}.git/locks", h.handleCreateLock).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}/locks", h.handleCreateLock).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}.git/locks/{id}/unlock", h.handleDeleteLock).Methods(http.MethodPost).MatcherFunc(metaMatcher)
+	r.HandleFunc("/{repo:.+}/locks/{id}/unlock", h.handleDeleteLock).Methods(http.MethodPost).MatcherFunc(metaMatcher)
 }
 
 func (h *Handler) handleGetLock(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repo := vars["repo"] + ".git"
+	repoName := vars["repo"]
 
-	enc := json.NewEncoder(w)
 	ll := &lfs.LockList{}
 
 	w.Header().Set("Content-Type", metaMediaType)
 
-	locks, nextCursor, err := h.locksStore.Filtered(repo,
+	locks, nextCursor, err := h.locksStore.Filtered(repoName,
 		r.FormValue("path"),
 		r.FormValue("cursor"),
 		r.FormValue("limit"))
@@ -50,24 +50,21 @@ func (h *Handler) handleGetLock(w http.ResponseWriter, r *http.Request) {
 		ll.NextCursor = nextCursor
 	}
 
-	enc.Encode(ll)
-
+	h.JSON(w, ll, http.StatusOK)
 }
 
 func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repo := vars["repo"] + ".git"
+	repoName := vars["repo"]
 	user := getUserFromRequest(r)
 
 	dec := json.NewDecoder(r.Body)
-	enc := json.NewEncoder(w)
 
 	w.Header().Set("Content-Type", metaMediaType)
 
 	reqBody := &lfs.VerifiableLockRequest{}
 	if err := dec.Decode(reqBody); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfs.VerifiableLockList{Message: err.Error()})
+		h.JSON(w, &lfs.VerifiableLockList{Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
 
@@ -78,7 +75,7 @@ func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ll := &lfs.VerifiableLockList{}
-	locks, nextCursor, err := h.locksStore.Filtered(repo, "",
+	locks, nextCursor, err := h.locksStore.Filtered(repoName, "",
 		reqBody.Cursor,
 		strconv.Itoa(limit))
 	if err != nil {
@@ -95,36 +92,31 @@ func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	enc.Encode(ll)
-
+	h.JSON(w, ll, http.StatusOK)
 }
 
 func (h *Handler) handleCreateLock(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repo := vars["repo"] + ".git"
+	repoName := vars["repo"]
 	user := getUserFromRequest(r)
 
 	dec := json.NewDecoder(r.Body)
-	enc := json.NewEncoder(w)
 
 	w.Header().Set("Content-Type", metaMediaType)
 
 	var lockRequest lfs.LockRequest
 	if err := dec.Decode(&lockRequest); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfs.LockResponse{Message: err.Error()})
+		h.JSON(w, &lfs.LockResponse{Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
 
-	locks, _, err := h.locksStore.Filtered(repo, lockRequest.Path, "", "1")
+	locks, _, err := h.locksStore.Filtered(repoName, lockRequest.Path, "", "1")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(&lfs.LockResponse{Message: err.Error()})
+		h.JSON(w, &lfs.LockResponse{Message: err.Error()}, http.StatusInternalServerError)
 		return
 	}
 	if len(locks) > 0 {
-		w.WriteHeader(http.StatusConflict)
-		enc.Encode(&lfs.LockResponse{Message: "lock already created"})
+		h.JSON(w, &lfs.LockResponse{Message: "lock already created"}, http.StatusConflict)
 		return
 	}
 
@@ -135,68 +127,57 @@ func (h *Handler) handleCreateLock(w http.ResponseWriter, r *http.Request) {
 		LockedAt: time.Now(),
 	}
 
-	if err := h.locksStore.Add(repo, *lock); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(&lfs.LockResponse{Message: err.Error()})
+	if err := h.locksStore.Add(repoName, *lock); err != nil {
+		h.JSON(w, &lfs.LockResponse{Message: err.Error()}, http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	enc.Encode(&lfs.LockResponse{
-		Lock: lock,
-	})
-
+	h.JSON(w, &lfs.LockResponse{Lock: lock}, http.StatusCreated)
 }
 
 func (h *Handler) handleDeleteLock(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	repo := vars["repo"] + ".git"
+	repoName := vars["repo"]
 	lockId := vars["id"]
 	user := getUserFromRequest(r)
 
 	dec := json.NewDecoder(r.Body)
-	enc := json.NewEncoder(w)
 
 	w.Header().Set("Content-Type", metaMediaType)
 
 	var unlockRequest lfs.UnlockRequest
 
 	if len(lockId) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfs.UnlockResponse{Message: "invalid lock id"})
+		h.JSON(w, &lfs.UnlockResponse{Message: "invalid lock id"}, http.StatusBadRequest)
 		return
 	}
 
 	if err := dec.Decode(&unlockRequest); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(&lfs.UnlockResponse{Message: err.Error()})
+		h.JSON(w, &lfs.UnlockResponse{Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
 
-	l, err := h.locksStore.Delete(repo, user, lockId, unlockRequest.Force)
+	l, err := h.locksStore.Delete(repoName, user, lockId, unlockRequest.Force)
 	if err != nil {
 		if err == ErrNotOwner {
-			w.WriteHeader(http.StatusForbidden)
+			h.JSON(w, &lfs.UnlockResponse{Message: err.Error()}, http.StatusForbidden)
 		} else {
-			w.WriteHeader(http.StatusInternalServerError)
+			h.JSON(w, &lfs.UnlockResponse{Message: err.Error()}, http.StatusInternalServerError)
 		}
-		enc.Encode(&lfs.UnlockResponse{Message: err.Error()})
 		return
 	}
 	if l == nil {
-		w.WriteHeader(http.StatusNotFound)
-		enc.Encode(&lfs.UnlockResponse{Message: "unable to find lock"})
+		h.JSON(w, &lfs.UnlockResponse{Message: "unable to find lock"}, http.StatusNotFound)
 		return
 	}
 
-	enc.Encode(&lfs.UnlockResponse{Lock: l})
-
+	h.JSON(w, &lfs.UnlockResponse{Lock: l}, http.StatusOK)
 }
 
 func randomLockId() string {
 	var id [20]byte
-	rand.Read(id[:])
-	return fmt.Sprintf("%x", id[:])
+	_, _ = rand.Read(id[:])
+	return hex.EncodeToString(id[:])
 }
 
 func getUserFromRequest(r *http.Request) string {

@@ -44,5 +44,5 @@ func (r *Repository) Stateless(ctx context.Context, output io.Writer, input io.R
 
 // packetLine formats a string as a git packet-line.
 func packetLine(s string) []byte {
-	return []byte(fmt.Sprintf("%04x%s", len(s)+4, s))
+	return fmt.Appendf(nil, "%04x%s", len(s)+4, s)
 }

@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	ErrNotOwner = errors.New("Attempt to delete other user's lock")
-	errNoBucket = errors.New("Bucket not found")
+	ErrNotOwner = errors.New("attempt to delete other user's lock")
+	errNoBucket = errors.New("bucket not found")
 )
 
 // LockDB implements a metadata storage. It stores user credentials and Meta information
@@ -40,12 +40,15 @@ func NewLock(dbFile string) *LockDB {
 		panic(fmt.Sprintf("Failed to open boltdb file %s: %v", dbFile, err))
 	}
 
-	db.Update(func(tx *bolt.Tx) error {
+	err = db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists(locksBucket); err != nil {
 			return err
 		}
 		return nil
 	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create boltdb buckets in file %s: %v", dbFile, err))
+	}
 
 	return &LockDB{db: db}
 }
@@ -139,7 +142,7 @@ func (s *LockDB) Filtered(repo, path, cursor, limit string) (locks []Lock, next 
 		size, err = strconv.Atoi(limit)
 		if err != nil || size < 0 {
 			locks = make([]Lock, 0)
-			err = fmt.Errorf("Invalid limit amount: %s", limit)
+			err = fmt.Errorf("invalid limit amount: %s", limit)
 			return
 		}
 
@@ -201,8 +204,8 @@ func (s *LockDB) Delete(repo, user, id string, force bool) (*Lock, error) {
 }
 
 // Close closes the underlying boltdb.
-func (s *LockDB) Close() {
-	s.db.Close()
+func (s *LockDB) Close() error {
+	return s.db.Close()
 }
 
 type User struct {

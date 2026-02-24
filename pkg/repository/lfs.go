@@ -92,7 +92,9 @@ func parseLFSPointerFromBlob(blob *object.Blob) (*LFSPointer, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	scanner := bufio.NewScanner(reader)
 	var isLFS bool
@@ -108,13 +110,13 @@ func parseLFSPointerFromBlob(blob *object.Blob) (*LFSPointer, error) {
 		}
 
 		// Extract OID from oid line
-		if strings.HasPrefix(line, "oid sha256:") {
-			oid = strings.TrimPrefix(line, "oid sha256:")
+		if after, ok := strings.CutPrefix(line, "oid sha256:"); ok {
+			oid = after
 		}
 
 		// Extract size
-		if strings.HasPrefix(line, "size ") {
-			sizeStr := strings.TrimPrefix(line, "size ")
+		if after, ok := strings.CutPrefix(line, "size "); ok {
+			sizeStr := after
 			size = parseSize(sizeStr)
 		}
 	}

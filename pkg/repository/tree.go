@@ -1,17 +1,24 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+
 	"github.com/wzshiming/gitd/pkg/lfs"
 )
 
 var (
-	ErrObjectNotFound = plumbing.ErrObjectNotFound
+	ErrObjectNotFound    = plumbing.ErrObjectNotFound
+	ErrReferenceNotFound = plumbing.ErrReferenceNotFound
 )
+
+func IsNotFoundError(err error) bool {
+	return errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrReferenceNotFound)
+}
 
 // TreeEntry represents a file or directory in the repository
 type TreeEntry struct {
@@ -25,15 +32,16 @@ type TreeEntry struct {
 }
 
 func (r *Repository) Tree(ref string, path string) ([]TreeEntry, error) {
-	refObj, err := r.repo.Reference(plumbing.ReferenceName("refs/heads/"+ref), true)
-	if err != nil {
-		if err == plumbing.ErrReferenceNotFound {
-			return []TreeEntry{}, nil
-		}
-		return nil, err
+	if ref == "" {
+		ref = r.DefaultBranch()
 	}
 
-	commit, err := r.repo.CommitObject(refObj.Hash())
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(ref))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve revision: %w", err)
+	}
+
+	commit, err := r.repo.CommitObject(*hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
 	}
@@ -50,7 +58,7 @@ func (r *Repository) Tree(ref string, path string) ([]TreeEntry, error) {
 		}
 
 		if entry.Mode.IsFile() {
-			return nil, fmt.Errorf("path is not a directory")
+			return nil, errors.New("path is not a directory")
 		}
 
 		tree, err = r.repo.TreeObject(entry.Hash)
@@ -76,7 +84,7 @@ func (r *Repository) Tree(ref string, path string) ([]TreeEntry, error) {
 				reader, err := blob.Reader()
 				if err == nil {
 					ptr, err := lfs.DecodePointer(reader)
-					reader.Close()
+					_ = reader.Close()
 					if err == nil && ptr != nil {
 						entry.IsLFS = true
 						entry.BlobSha256 = ptr.Oid

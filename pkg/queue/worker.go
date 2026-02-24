@@ -21,11 +21,11 @@ type Worker struct {
 	maxWorkers int
 	pollDelay  time.Duration
 
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	mu         sync.RWMutex
-	running    map[int64]context.CancelFunc // task ID -> cancel function
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	mu      sync.RWMutex
+	running map[int64]context.CancelFunc // task ID -> cancel function
 }
 
 // NewWorker creates a new queue worker
@@ -134,7 +134,7 @@ func (w *Worker) processTask(task *Task) {
 
 	if !exists {
 		log.Printf("No handler registered for task type: %s\n", task.Type)
-		w.store.UpdateStatus(task.ID, TaskStatusFailed, fmt.Sprintf("No handler for task type: %s", task.Type))
+		_ = w.store.UpdateStatus(task.ID, TaskStatusFailed, fmt.Sprintf("No handler for task type: %s", task.Type))
 		return
 	}
 
@@ -162,7 +162,7 @@ func (w *Worker) processTask(task *Task) {
 
 	// Create progress callback
 	progressFn := func(progress int, message string, doneBytes, totalBytes int64) {
-		w.store.UpdateProgress(task.ID, progress, message, doneBytes, totalBytes)
+		_ = w.store.UpdateProgress(task.ID, progress, message, doneBytes, totalBytes)
 	}
 
 	// Execute the handler
@@ -172,15 +172,15 @@ func (w *Worker) processTask(task *Task) {
 	if err != nil {
 		if taskCtx.Err() == context.Canceled {
 			log.Printf("Task %d cancelled\n", task.ID)
-			w.store.UpdateStatus(task.ID, TaskStatusCancelled, "Cancelled")
+			_ = w.store.UpdateStatus(task.ID, TaskStatusCancelled, "Cancelled")
 		} else {
 			log.Printf("Task %d failed: %v\n", task.ID, err)
-			w.store.UpdateStatus(task.ID, TaskStatusFailed, err.Error())
+			_ = w.store.UpdateStatus(task.ID, TaskStatusFailed, err.Error())
 		}
 		return
 	}
 
 	log.Printf("Task %d completed successfully\n", task.ID)
-	w.store.UpdateProgress(task.ID, 100, "Completed", 0, 0)
-	w.store.UpdateStatus(task.ID, TaskStatusCompleted, "")
+	_ = w.store.UpdateProgress(task.ID, 100, "Completed", 0, 0)
+	_ = w.store.UpdateStatus(task.ID, TaskStatusCompleted, "")
 }
