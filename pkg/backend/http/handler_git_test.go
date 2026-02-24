@@ -314,3 +314,97 @@ func TestInfoRefs(t *testing.T) {
 		}
 	})
 }
+
+// testAuth implements the Authenticator interface for testing.
+type testAuth struct {
+	username string
+	password string
+}
+
+func (a *testAuth) Authenticate(user, password string) (string, bool) {
+	if user == a.username && password == a.password {
+		return user, true
+	}
+	return "", false
+}
+
+// TestHTTPBasicAuth tests that HTTP basic authentication works correctly.
+func TestHTTPBasicAuth(t *testing.T) {
+	repoDir, err := os.MkdirTemp("", "matrixhub-test-auth")
+	if err != nil {
+		t.Fatalf("Failed to create temp repo dir: %v", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(repoDir)
+	}()
+
+	// Create a bare repository
+	repoName := "test.git"
+	repoPath := filepath.Join(repoDir, "repositories", repoName)
+	runGitCmd(t, "", "init", "--bare", repoPath)
+
+	auth := &testAuth{username: "testuser", password: "testpass"}
+	handler := backend.NewHandler(
+		backend.WithRootDir(repoDir),
+		backend.WithAuthenticate(auth),
+	)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	t.Run("UnauthenticatedRequestReturns401", func(t *testing.T) {
+		resp, err := http.Get(server.URL + "/" + repoName + "/info/refs?service=git-upload-pack")
+		if err != nil {
+			t.Fatalf("Failed to send request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+		if resp.Header.Get("WWW-Authenticate") == "" {
+			t.Error("Expected WWW-Authenticate header")
+		}
+	})
+
+	t.Run("WrongCredentialsReturns401", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, server.URL+"/"+repoName+"/info/refs?service=git-upload-pack", nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		req.SetBasicAuth("wronguser", "wrongpass")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Failed to send request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CorrectCredentialsReturns200", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, server.URL+"/"+repoName+"/info/refs?service=git-upload-pack", nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		req.SetBasicAuth("testuser", "testpass")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Failed to send request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		}
+	})
+}

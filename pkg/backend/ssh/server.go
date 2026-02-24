@@ -22,22 +22,72 @@ import (
 // Signer is an alias for ssh.Signer to avoid requiring callers to import golang.org/x/crypto/ssh.
 type Signer = ssh.Signer
 
+// PublicKey is an alias for ssh.PublicKey to avoid requiring callers to import golang.org/x/crypto/ssh.
+type PublicKey = ssh.PublicKey
+
 // Server implements the SSH protocol (ssh://) server for git operations.
 type Server struct {
 	repositoriesDir string
 	config          *ssh.ServerConfig
 }
 
+// Option configures the SSH server.
+type Option func(*ssh.ServerConfig)
+
+// WithPublicKeyCallback sets the public key authentication callback for the SSH server.
+// When set, clients must authenticate with a public key accepted by the callback.
+func WithPublicKeyCallback(callback func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error)) Option {
+	return func(config *ssh.ServerConfig) {
+		config.NoClientAuth = false
+		config.PublicKeyCallback = callback
+	}
+}
+
 // NewServer creates a new SSH protocol server.
-func NewServer(repositoriesDir string, hostKey ssh.Signer) *Server {
+func NewServer(repositoriesDir string, hostKey ssh.Signer, opts ...Option) *Server {
 	config := &ssh.ServerConfig{
 		NoClientAuth: true,
+	}
+	for _, opt := range opts {
+		opt(config)
 	}
 	config.AddHostKey(hostKey)
 
 	return &Server{
 		repositoriesDir: repositoriesDir,
 		config:          config,
+	}
+}
+
+// ParseAuthorizedKeys parses an OpenSSH authorized_keys file and returns
+// the parsed public keys. Lines that are empty or start with '#' are skipped.
+func ParseAuthorizedKeys(data []byte) ([]ssh.PublicKey, error) {
+	var keys []ssh.PublicKey
+	rest := data
+	for len(rest) > 0 {
+		var key ssh.PublicKey
+		var err error
+		key, _, _, rest, err = ssh.ParseAuthorizedKey(rest)
+		if err != nil {
+			return nil, fmt.Errorf("parsing authorized key: %w", err)
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+// AuthorizedKeysCallback returns a PublicKeyCallback that checks incoming keys
+// against the provided list of authorized public keys.
+func AuthorizedKeysCallback(authorizedKeys []ssh.PublicKey) func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	keyMap := make(map[string]bool, len(authorizedKeys))
+	for _, k := range authorizedKeys {
+		keyMap[string(k.Marshal())] = true
+	}
+	return func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		if keyMap[string(key.Marshal())] {
+			return &ssh.Permissions{}, nil
+		}
+		return nil, fmt.Errorf("public key not found in authorized keys")
 	}
 }
 

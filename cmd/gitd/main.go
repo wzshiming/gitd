@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"flag"
 	"fmt"
 	"log"
@@ -18,6 +19,33 @@ import (
 	"github.com/wzshiming/gitd/pkg/s3fs"
 )
 
+// staticAuth implements backendhttp.Authenticator with static credentials.
+// It supports both basic authentication (username/password) and token authentication.
+type staticAuth struct {
+	username string
+	password string
+	token    string
+}
+
+func (a *staticAuth) Authenticate(user, password string) (string, bool) {
+	// Token authentication: any username with the correct token as password
+	if a.token != "" {
+		if subtle.ConstantTimeCompare([]byte(password), []byte(a.token)) == 1 {
+			return user, true
+		}
+	}
+
+	// Basic authentication: exact username and password match
+	if a.username != "" {
+		if subtle.ConstantTimeCompare([]byte(user), []byte(a.username)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(password), []byte(a.password)) == 1 {
+			return user, true
+		}
+	}
+
+	return "", false
+}
+
 var (
 	gitAddr        = ""
 	addr           = ":8080"
@@ -31,6 +59,12 @@ var (
 	s3SecretKey    = ""
 	s3Bucket       = ""
 	s3UsePathStyle = false
+
+	// Authentication flags
+	sshAuthorizedKey = ""
+	httpUsername      = ""
+	httpPassword      = ""
+	httpToken         = ""
 )
 
 func init() {
@@ -46,6 +80,13 @@ func init() {
 	flag.StringVar(&s3SecretKey, "s3-secret-key", "", "S3 secret key")
 	flag.StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket name")
 	flag.BoolVar(&s3UsePathStyle, "s3-use-path-style", false, "Use path style for S3 URLs")
+
+	// Authentication flags
+	flag.StringVar(&sshAuthorizedKey, "ssh-authorized-key", "", "Path to SSH authorized_keys file for public key authentication")
+	flag.StringVar(&httpUsername, "http-username", "", "Username for HTTP basic authentication")
+	flag.StringVar(&httpPassword, "http-password", "", "Password for HTTP basic authentication")
+	flag.StringVar(&httpToken, "http-token", "", "OAuth token for HTTP authentication (used as password with any username)")
+
 	flag.Parse()
 }
 
@@ -58,6 +99,16 @@ func main() {
 
 	opts := []backendhttp.Option{
 		backendhttp.WithRootDir(absRootDir),
+	}
+
+	// Configure HTTP authentication
+	if httpUsername != "" || httpToken != "" {
+		opts = append(opts, backendhttp.WithAuthenticate(&staticAuth{
+			username: httpUsername,
+			password: httpPassword,
+			token:    httpToken,
+		}))
+		log.Printf("HTTP authentication enabled\n")
 	}
 
 	log.Printf("Starting matrixhub server on %s, serving repositories from %s\n", addr, absRootDir)
@@ -149,7 +200,22 @@ func main() {
 			}
 			log.Printf("Generated SSH host key and saved to %s\n", hostKeyPath)
 		}
-		sshServer := backendssh.NewServer(repositoriesDir, hostKeySigner)
+		var sshOpts []backendssh.Option
+		if sshAuthorizedKey != "" {
+			authKeysData, err := os.ReadFile(sshAuthorizedKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading SSH authorized keys file: %v\n", err)
+				os.Exit(1)
+			}
+			authorizedKeys, err := backendssh.ParseAuthorizedKeys(authKeysData)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing SSH authorized keys: %v\n", err)
+				os.Exit(1)
+			}
+			sshOpts = append(sshOpts, backendssh.WithPublicKeyCallback(backendssh.AuthorizedKeysCallback(authorizedKeys)))
+			log.Printf("SSH public key authentication enabled with %d key(s)\n", len(authorizedKeys))
+		}
+		sshServer := backendssh.NewServer(repositoriesDir, hostKeySigner, sshOpts...)
 		log.Printf("Starting SSH protocol server on %s\n", sshAddr)
 		go func() {
 			if err := sshServer.ListenAndServe(sshAddr); err != nil {
