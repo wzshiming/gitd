@@ -1,4 +1,4 @@
-package gitprotocol
+package git
 
 import (
 	"context"
@@ -48,10 +48,6 @@ func (s *Server) ListenAndServe(addr string) error {
 }
 
 // handleConnection handles a single git protocol connection.
-//
-// The git protocol request format is:
-//
-//	<4-byte hex length>git-upload-pack /path/to/repo\x00host=hostname\x00
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 

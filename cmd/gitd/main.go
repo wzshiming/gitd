@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/wzshiming/gitd/internal/handlers"
+	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
 	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
 	"github.com/wzshiming/gitd/pkg/lfs"
 	"github.com/wzshiming/gitd/pkg/s3fs"
@@ -107,7 +108,7 @@ func main() {
 
 	if gitAddr != "" {
 		repositoriesDir := filepath.Join(absRootDir, "repositories")
-		gitServer := gitprotocol.NewServer(repositoriesDir)
+		gitServer := backendgit.NewServer(repositoriesDir)
 		log.Printf("Starting git protocol server on %s\n", gitAddr)
 		go func() {
 			if err := gitServer.ListenAndServe(gitAddr); err != nil {

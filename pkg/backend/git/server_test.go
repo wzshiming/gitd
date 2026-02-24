@@ -1,4 +1,4 @@
-package gitprotocol_test
+package git_test
 
 import (
 	"net"
@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/wzshiming/gitd/internal/utils"
-	"github.com/wzshiming/gitd/pkg/gitprotocol"
+	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
 )
 
 // runGitCmd runs a git command in the specified directory.
@@ -54,7 +54,7 @@ func TestGitProtocolServer(t *testing.T) {
 	runGitCmd(t, "", "init", "--bare", repoPath)
 
 	// Start git protocol server on a random port
-	server := gitprotocol.NewServer(repositoriesDir)
+	server := backendgit.NewServer(repositoriesDir)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
