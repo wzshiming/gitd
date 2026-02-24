@@ -50,7 +50,8 @@ func GenerateHostKey() (ssh.Signer, error) {
 	return ssh.NewSignerFromKey(priv)
 }
 
-// GenerateAndSaveHostKey generates an ED25519 host key and saves it to the given file path.
+// GenerateAndSaveHostKey generates an ED25519 host key and saves it to the given file path
+// with 0600 permissions.
 func GenerateAndSaveHostKey(path string) (ssh.Signer, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
