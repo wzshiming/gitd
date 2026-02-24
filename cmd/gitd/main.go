@@ -111,7 +111,7 @@ func main() {
 		log.Printf("Starting git protocol server on %s\n", gitAddr)
 		go func() {
 			if err := gitServer.ListenAndServe(gitAddr); err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting git protocol server: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Error starting git protocol server on %s: %v\n", gitAddr, err)
 				os.Exit(1)
 			}
 		}()

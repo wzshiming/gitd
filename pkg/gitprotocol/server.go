@@ -158,7 +158,8 @@ func (s *Server) resolveRepoPath(urlPath string) string {
 	fullPath = filepath.Clean(fullPath)
 
 	// Prevent path traversal outside the repositories directory
-	if !strings.HasPrefix(fullPath, filepath.Clean(s.repositoriesDir)+string(filepath.Separator)) {
+	rel, err := filepath.Rel(s.repositoriesDir, fullPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return ""
 	}
 
