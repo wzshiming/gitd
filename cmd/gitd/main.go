@@ -13,13 +13,16 @@ import (
 	"github.com/wzshiming/gitd/internal/handlers"
 	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
 	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
+	backendssh "github.com/wzshiming/gitd/pkg/backend/ssh"
 	"github.com/wzshiming/gitd/pkg/lfs"
 	"github.com/wzshiming/gitd/pkg/s3fs"
 )
 
 var (
-	addr           = ":8080"
 	gitAddr        = ""
+	addr           = ":8080"
+	sshAddr        = ":2222"
+	sshHostKeyFile = ""
 	dataDir        = "./data"
 	s3Repositories = false
 	s3SignEndpoint = ""
@@ -31,8 +34,10 @@ var (
 )
 
 func init() {
-	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
 	flag.StringVar(&gitAddr, "git-addr", "", "Git protocol server address (e.g. :9418)")
+	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
+	flag.StringVar(&sshAddr, "ssh-addr", ":2222", "SSH protocol server address")
+	flag.StringVar(&sshHostKeyFile, "ssh-host-key", "", "Path to SSH host key file (PEM format); if empty, a key is generated")
 	flag.StringVar(&dataDir, "data", "./data", "Directory containing git repositories")
 	flag.BoolVar(&s3Repositories, "s3-repositories", false, "Store repositories in S3")
 	flag.StringVar(&s3Endpoint, "s3-endpoint", "", "S3 endpoint")
@@ -113,6 +118,42 @@ func main() {
 		go func() {
 			if err := gitServer.ListenAndServe(gitAddr); err != nil {
 				fmt.Fprintf(os.Stderr, "Error starting git protocol server on %s: %v\n", gitAddr, err)
+				os.Exit(1)
+			}
+		}()
+	}
+
+	if sshAddr != "" {
+		repositoriesDir := filepath.Join(absRootDir, "repositories")
+		var hostKeySigner backendssh.Signer
+		hostKeyPath := sshHostKeyFile
+		if hostKeyPath == "" {
+			hostKeyPath = filepath.Join(absRootDir, "ssh_host_ed25519_key")
+		}
+		data, err := os.ReadFile(hostKeyPath)
+		if err == nil {
+			hostKeySigner, err = backendssh.ParseHostKeyFile(data)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing SSH host key file: %v\n", err)
+				os.Exit(1)
+			}
+			log.Printf("Loaded SSH host key from %s\n", hostKeyPath)
+		} else if sshHostKeyFile != "" {
+			fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
+			os.Exit(1)
+		} else {
+			hostKeySigner, err = backendssh.GenerateAndSaveHostKey(hostKeyPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error generating SSH host key: %v\n", err)
+				os.Exit(1)
+			}
+			log.Printf("Generated SSH host key and saved to %s\n", hostKeyPath)
+		}
+		sshServer := backendssh.NewServer(repositoriesDir, hostKeySigner)
+		log.Printf("Starting SSH protocol server on %s\n", sshAddr)
+		go func() {
+			if err := sshServer.ListenAndServe(sshAddr); err != nil {
+				fmt.Fprintf(os.Stderr, "Error starting SSH protocol server on %s: %v\n", sshAddr, err)
 				os.Exit(1)
 			}
 		}()
