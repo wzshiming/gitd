@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	addr           = ":8080"
 	gitAddr        = ""
-	sshAddr        = ""
+	addr           = ":8080"
+	sshAddr        = ":2222"
 	sshHostKeyFile = ""
 	dataDir        = "./data"
 	s3Repositories = false
@@ -34,9 +34,9 @@ var (
 )
 
 func init() {
-	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
 	flag.StringVar(&gitAddr, "git-addr", "", "Git protocol server address (e.g. :9418)")
-	flag.StringVar(&sshAddr, "ssh-addr", "", "SSH protocol server address (e.g. :2222)")
+	flag.StringVar(&addr, "addr", ":8080", "HTTP server address")
+	flag.StringVar(&sshAddr, "ssh-addr", ":2222", "SSH protocol server address")
 	flag.StringVar(&sshHostKeyFile, "ssh-host-key", "", "Path to SSH host key file (PEM format); if empty, a key is generated")
 	flag.StringVar(&dataDir, "data", "./data", "Directory containing git repositories")
 	flag.BoolVar(&s3Repositories, "s3-repositories", false, "Store repositories in S3")
