@@ -24,17 +24,9 @@ import (
 type staticAuth struct {
 	username string
 	password string
-	token    string
 }
 
 func (a *staticAuth) Authenticate(user, password string) (string, bool) {
-	// Token authentication: any username with the correct token as password
-	if a.token != "" {
-		if subtle.ConstantTimeCompare([]byte(password), []byte(a.token)) == 1 {
-			return user, true
-		}
-	}
-
 	// Basic authentication: exact username and password match
 	if a.username != "" {
 		if subtle.ConstantTimeCompare([]byte(user), []byte(a.username)) == 1 &&
@@ -62,9 +54,8 @@ var (
 
 	// Authentication flags
 	sshAuthorizedKey = ""
-	httpUsername      = ""
+	httpUsername     = ""
 	httpPassword     = ""
-	httpToken        = ""
 )
 
 func init() {
@@ -85,7 +76,6 @@ func init() {
 	flag.StringVar(&sshAuthorizedKey, "ssh-authorized-key", "", "Path to SSH authorized_keys file for public key authentication")
 	flag.StringVar(&httpUsername, "http-username", "", "Username for HTTP basic authentication")
 	flag.StringVar(&httpPassword, "http-password", "", "Password for HTTP basic authentication")
-	flag.StringVar(&httpToken, "http-token", "", "OAuth token for HTTP authentication (used as password with any username)")
 
 	flag.Parse()
 }
@@ -102,11 +92,10 @@ func main() {
 	}
 
 	// Configure HTTP authentication
-	if httpUsername != "" || httpToken != "" {
+	if httpUsername != "" {
 		opts = append(opts, backendhttp.WithAuthenticate(&staticAuth{
 			username: httpUsername,
 			password: httpPassword,
-			token:    httpToken,
 		}))
 		log.Printf("HTTP authentication enabled\n")
 	}
