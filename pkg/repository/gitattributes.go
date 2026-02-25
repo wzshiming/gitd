@@ -9,29 +9,22 @@ import (
 // GitAttributes represents parsed .gitattributes content and provides
 // methods to check if a file path matches LFS filter patterns.
 type GitAttributes struct {
-	attrs []gitattributes.MatchAttribute
+	matcher gitattributes.Matcher
 }
 
 // IsLFS returns true if the given file path matches an LFS filter pattern
 // defined in the .gitattributes file.
 func (g *GitAttributes) IsLFS(filePath string) bool {
-	if g == nil || len(g.attrs) == 0 {
+	if g == nil || g.matcher == nil {
 		return false
 	}
 	path := strings.Split(filePath, "/")
-	// Iterate in reverse so that the last matching pattern wins (highest priority).
-	for i := len(g.attrs) - 1; i >= 0; i-- {
-		a := g.attrs[i]
-		if a.Pattern == nil || !a.Pattern.Match(path) {
-			continue
-		}
-		for _, attr := range a.Attributes {
-			if attr.Name() == "filter" {
-				return attr.IsValueSet() && attr.Value() == "lfs"
-			}
-		}
+	results, matched := g.matcher.Match(path, []string{"filter"})
+	if !matched {
+		return false
 	}
-	return false
+	attr, ok := results["filter"]
+	return ok && attr.IsValueSet() && attr.Value() == "lfs"
 }
 
 // GitAttributes reads and parses the .gitattributes file from the repository
@@ -51,5 +44,5 @@ func (r *Repository) GitAttributes(ref string) (*GitAttributes, error) {
 	if err != nil {
 		return nil, nil
 	}
-	return &GitAttributes{attrs: attrs}, nil
+	return &GitAttributes{matcher: gitattributes.NewMatcher(attrs)}, nil
 }
