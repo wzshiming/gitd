@@ -30,7 +30,9 @@ type CommitOperation struct {
 
 // CreateCommit creates a new commit on the given branch with the given operations.
 // This works on bare repositories by directly manipulating git objects and refs.
-func (r *Repository) CreateCommit(ctx context.Context, ref string, message string, authorName string, authorEmail string, ops []CommitOperation) (string, error) {
+// If parentCommit is non-empty, the ref update is made atomic: the current tip
+// must match parentCommit, otherwise the operation fails (optimistic concurrency).
+func (r *Repository) CreateCommit(ctx context.Context, ref string, message string, authorName string, authorEmail string, ops []CommitOperation, parentCommit string) (string, error) {
 	if ref == "" {
 		ref = r.DefaultBranch()
 	}
@@ -109,16 +111,22 @@ func (r *Repository) CreateCommit(ctx context.Context, ref string, message strin
 	args := []string{"commit-tree", treeHash, "-m", message}
 
 	// Add parent if branch exists
+	var currentTip string
 	{
 		parentCmd := utils.Command(ctx, "git", "rev-parse", "--verify", refName)
 		parentCmd.Env = env
 		parentOutput, err := parentCmd.Output()
 		if err == nil {
-			parentHash := strings.TrimSpace(string(parentOutput))
-			if parentHash != "" {
-				args = append(args, "-p", parentHash)
+			currentTip = strings.TrimSpace(string(parentOutput))
+			if currentTip != "" {
+				args = append(args, "-p", currentTip)
 			}
 		}
+	}
+
+	// If parentCommit is specified, verify it matches the current tip
+	if parentCommit != "" && currentTip != parentCommit {
+		return "", fmt.Errorf("expected parent commit %s but branch tip is %s", parentCommit, currentTip)
 	}
 
 	cmd = utils.Command(ctx, "git", args...)
@@ -129,8 +137,12 @@ func (r *Repository) CreateCommit(ctx context.Context, ref string, message strin
 	}
 	commitHash := strings.TrimSpace(string(output))
 
-	// Update ref
-	cmd = utils.Command(ctx, "git", "update-ref", refName, commitHash)
+	// Update ref atomically: provide old value to prevent lost updates
+	updateRefArgs := []string{"update-ref", refName, commitHash}
+	if currentTip != "" {
+		updateRefArgs = append(updateRefArgs, currentTip)
+	}
+	cmd = utils.Command(ctx, "git", updateRefArgs...)
 	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to update ref: %w", err)

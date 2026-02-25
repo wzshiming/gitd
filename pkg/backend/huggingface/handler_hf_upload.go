@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -301,11 +302,15 @@ func (h *Handler) handleHFCommit(w http.ResponseWriter, r *http.Request) {
 	// Open the repository
 	repo, err := repository.Open(repoPath)
 	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
+			return
+		}
 		responseJSON(w, fmt.Errorf("failed to open repository %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 
-	commitHash, err := repo.CreateCommit(r.Context(), revision, message, "HuggingFace", "hf@users.noreply.huggingface.co", ops)
+	commitHash, err := repo.CreateCommit(r.Context(), revision, message, "HuggingFace", "hf@users.noreply.huggingface.co", ops, header.ParentCommit)
 	if err != nil {
 		responseJSON(w, fmt.Errorf("failed to create commit: %v", err), http.StatusInternalServerError)
 		return
