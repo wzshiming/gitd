@@ -17,6 +17,18 @@ import (
 // These endpoints allow using huggingface-cli and huggingface_hub library
 // with HF_ENDPOINT pointing to this server.
 func (h *Handler) registryHuggingFace(r *mux.Router) {
+	// Repository creation endpoint - used by huggingface_hub to create repos
+	r.HandleFunc("/api/repos/create", h.handleHFCreateRepo).Methods(http.MethodPost)
+
+	// YAML validation endpoint - used by huggingface_hub to validate README YAML front matter
+	r.HandleFunc("/api/validate-yaml", h.handleHFValidateYAML).Methods(http.MethodPost)
+
+	// Pre-upload endpoint - used by huggingface_hub to determine upload modes
+	r.HandleFunc("/api/models/{repo:.+}/preupload/{revision}", h.handleHFPreupload).Methods(http.MethodPost)
+
+	// Commit endpoint - used by huggingface_hub to create commits
+	r.HandleFunc("/api/models/{repo:.+}/commit/{revision}", h.handleHFCommit).Methods(http.MethodPost)
+
 	// Model info endpoint with revision - used by huggingface_hub for snapshot_download
 	r.HandleFunc("/api/models/{repo:.+}/revision/{revision:.*}", h.handleHFModelInfoRevision).Methods(http.MethodGet)
 
