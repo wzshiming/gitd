@@ -314,7 +314,7 @@ func (h *Handler) handleHFCommit(w http.ResponseWriter, r *http.Request) {
 	resp := HFCommitResponse{
 		CommitURL:     fmt.Sprintf("%s/%s/commit/%s", requestOrigin(r), repoName, commitHash),
 		CommitOid:     commitHash,
-		CommitMessage: header.Summary,
+		CommitMessage: message,
 	}
 	responseJSON(w, resp, http.StatusOK)
 }

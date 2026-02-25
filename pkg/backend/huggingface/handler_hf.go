@@ -24,10 +24,10 @@ func (h *Handler) registryHuggingFace(r *mux.Router) {
 	r.HandleFunc("/api/validate-yaml", h.handleHFValidateYAML).Methods(http.MethodPost)
 
 	// Pre-upload endpoint - used by huggingface_hub to determine upload modes
-	r.HandleFunc("/api/models/{repo:.+}/preupload/{revision}", h.handleHFPreupload).Methods(http.MethodPost)
+	r.HandleFunc("/api/models/{repo:.+}/preupload/{revision:.*}", h.handleHFPreupload).Methods(http.MethodPost)
 
 	// Commit endpoint - used by huggingface_hub to create commits
-	r.HandleFunc("/api/models/{repo:.+}/commit/{revision}", h.handleHFCommit).Methods(http.MethodPost)
+	r.HandleFunc("/api/models/{repo:.+}/commit/{revision:.*}", h.handleHFCommit).Methods(http.MethodPost)
 
 	// Model info endpoint with revision - used by huggingface_hub for snapshot_download
 	r.HandleFunc("/api/models/{repo:.+}/revision/{revision:.*}", h.handleHFModelInfoRevision).Methods(http.MethodGet)
