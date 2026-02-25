@@ -209,16 +209,35 @@ func (h *Handler) handleHFCreateRepo(w http.ResponseWriter, r *http.Request) {
 
 // handleHFPreupload handles POST /api/models/{repo}/preupload/{revision}
 func (h *Handler) handleHFPreupload(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	revision := vars["revision"]
+
 	var req HFPreuploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
+	// Try to read .gitattributes from the repository to determine LFS patterns
+	var gitAttrs *repository.GitAttributes
+	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoStorageName(r))
+	if repoPath != "" {
+		repo, err := repository.Open(repoPath)
+		if err == nil {
+			ref := revision
+			if ref == "" {
+				ref = repo.DefaultBranch()
+			}
+			gitAttrs, _ = repo.GitAttributes(ref)
+		}
+	}
+
 	var respFiles []HFPreuploadResponseFile
 	for _, file := range req.Files {
 		uploadMode := "regular"
-		if file.Size > lfsThreshold {
+		if gitAttrs != nil && gitAttrs.IsLFS(file.Path) {
+			uploadMode = "lfs"
+		} else if file.Size > lfsThreshold {
 			uploadMode = "lfs"
 		}
 		respFiles = append(respFiles, HFPreuploadResponseFile{
