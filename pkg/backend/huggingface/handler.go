@@ -59,6 +59,36 @@ func (h *Handler) register() {
 	h.root.NotFoundHandler = h.next
 }
 
+// withRepoPrefix returns a handler wrapper that prepends a storage prefix to the repo name in route vars.
+// This allows datasets and spaces to be stored in separate directories from models.
+func withRepoPrefix(prefix string, handler http.HandlerFunc) http.HandlerFunc {
+	if prefix == "" {
+		return handler
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		vars["repo"] = prefix + "/" + vars["repo"]
+		handler(w, r)
+	}
+}
+
+// registerRepoTypeRoutes registers all repo-type-specific routes.
+// apiPrefix is the API path prefix (e.g., "/api/models", "/api/datasets", "/api/spaces").
+// resolvePrefix is the resolve path prefix (e.g., "" for models, "/datasets", "/spaces").
+// storagePrefix is the directory prefix for storing repos (e.g., "" for models, "datasets", "spaces").
+func (h *Handler) registerRepoTypeRoutes(r *mux.Router, apiPrefix string, resolvePrefix string, storagePrefix string) {
+	wrap := func(handler http.HandlerFunc) http.HandlerFunc {
+		return withRepoPrefix(storagePrefix, handler)
+	}
+
+	r.HandleFunc(apiPrefix+"/{repo:.+}/preupload/{revision:.*}", wrap(h.handleHFPreupload)).Methods(http.MethodPost)
+	r.HandleFunc(apiPrefix+"/{repo:.+}/commit/{revision:.*}", wrap(h.handleHFCommit)).Methods(http.MethodPost)
+	r.HandleFunc(apiPrefix+"/{repo:.+}/revision/{revision:.*}", wrap(h.handleHFModelInfoRevision)).Methods(http.MethodGet)
+	r.HandleFunc(apiPrefix+"/{repo:.+}/tree/{refpath:.*}", wrap(h.handleHFTree)).Methods(http.MethodGet)
+	r.HandleFunc(apiPrefix+"/{repo:.+}", wrap(h.handleHFModelInfo)).Methods(http.MethodGet)
+	r.HandleFunc(resolvePrefix+"/{repo:.+}/resolve/{refpath:.*}", wrap(h.handleHFResolve)).Methods(http.MethodGet, http.MethodHead)
+}
+
 // registryHuggingFace registers the HuggingFace-compatible API endpoints.
 // These endpoints allow using huggingface-cli and huggingface_hub library
 // with HF_ENDPOINT pointing to this server.
@@ -69,24 +99,14 @@ func (h *Handler) registryHuggingFace(r *mux.Router) {
 	// YAML validation endpoint - used by huggingface_hub to validate README YAML front matter
 	r.HandleFunc("/api/validate-yaml", h.handleHFValidateYAML).Methods(http.MethodPost)
 
-	// Pre-upload endpoint - used by huggingface_hub to determine upload modes
-	r.HandleFunc("/api/models/{repo:.+}/preupload/{revision:.*}", h.handleHFPreupload).Methods(http.MethodPost)
+	// Register routes for datasets
+	h.registerRepoTypeRoutes(r, "/api/datasets", "/datasets", "datasets")
 
-	// Commit endpoint - used by huggingface_hub to create commits
-	r.HandleFunc("/api/models/{repo:.+}/commit/{revision:.*}", h.handleHFCommit).Methods(http.MethodPost)
+	// Register routes for spaces
+	h.registerRepoTypeRoutes(r, "/api/spaces", "/spaces", "spaces")
 
-	// Model info endpoint with revision - used by huggingface_hub for snapshot_download
-	r.HandleFunc("/api/models/{repo:.+}/revision/{revision:.*}", h.handleHFModelInfoRevision).Methods(http.MethodGet)
-
-	// Tree endpoint - used by huggingface_hub to list files in the model repository
-	r.HandleFunc("/api/models/{repo:.+}/tree/{refpath:.*}", h.handleHFTree).Methods(http.MethodGet)
-
-	// Model info endpoint - used by huggingface_hub to get model metadata
-	r.HandleFunc("/api/models/{repo:.+}", h.handleHFModelInfo).Methods(http.MethodGet)
-
-	// File download endpoint - used by huggingface_hub to download files
-	r.HandleFunc("/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
-
+	// Register routes for models (no prefix for backward compatibility)
+	h.registerRepoTypeRoutes(r, "/api/models", "", "")
 }
 
 func responseJSON(w http.ResponseWriter, data any, sc int) {
