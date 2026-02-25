@@ -218,28 +218,35 @@ func (h *Handler) handleHFPreupload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try to read .gitattributes from the repository to determine LFS patterns
-	var gitAttrs *repository.GitAttributes
 	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoStorageName(r))
-	if repoPath != "" {
-		repo, err := repository.Open(repoPath)
-		if err == nil {
-			ref := revision
-			if ref == "" {
-				ref = repo.DefaultBranch()
-			}
-			gitAttrs, _ = repo.GitAttributes(ref)
+	if repoPath == "" {
+		responseJSON(w, fmt.Errorf("repository not found"), http.StatusNotFound)
+		return
+	}
+
+	repo, err := repository.Open(repoPath)
+	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			responseJSON(w, fmt.Errorf("repository not found"), http.StatusNotFound)
+			return
 		}
+		responseJSON(w, fmt.Errorf("failed to open repository: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	gitAttrs, err := repo.GitAttributes(revision)
+	if err != nil {
+		responseJSON(w, fmt.Errorf("failed to read .gitattributes: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	var respFiles []HFPreuploadResponseFile
 	for _, file := range req.Files {
 		uploadMode := "regular"
-		if gitAttrs != nil && gitAttrs.IsLFS(file.Path) {
-			uploadMode = "lfs"
-		} else if file.Size > lfsThreshold {
+		if file.Size > lfsThreshold || gitAttrs.IsLFS(file.Path) {
 			uploadMode = "lfs"
 		}
+
 		respFiles = append(respFiles, HFPreuploadResponseFile{
 			Path:       file.Path,
 			UploadMode: uploadMode,
@@ -336,8 +343,8 @@ func (h *Handler) handleHFCommit(w http.ResponseWriter, r *http.Request) {
 			}
 
 			ops = append(ops, repository.CommitOperation{
-				Type:    repository.CommitOperationDelete,
-				Path:    deleted.Path,
+				Type: repository.CommitOperationDelete,
+				Path: deleted.Path,
 			})
 		}
 	}

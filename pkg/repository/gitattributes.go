@@ -12,15 +12,6 @@ type GitAttributes struct {
 	attrs []gitattributes.MatchAttribute
 }
 
-// ParseGitAttributes parses .gitattributes content and extracts patterns.
-func ParseGitAttributes(content string) *GitAttributes {
-	attrs, err := gitattributes.ReadAttributes(strings.NewReader(content), nil, true)
-	if err != nil || len(attrs) == 0 {
-		return &GitAttributes{}
-	}
-	return &GitAttributes{attrs: attrs}
-}
-
 // IsLFS returns true if the given file path matches an LFS filter pattern
 // defined in the .gitattributes file.
 func (g *GitAttributes) IsLFS(filePath string) bool {
@@ -48,17 +39,17 @@ func (g *GitAttributes) IsLFS(filePath string) bool {
 func (r *Repository) GitAttributes(ref string) (*GitAttributes, error) {
 	blob, err := r.Blob(ref, ".gitattributes")
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	reader, err := blob.NewReader()
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	defer reader.Close()
 
 	attrs, err := gitattributes.ReadAttributes(reader, nil, true)
-	if err != nil || len(attrs) == 0 {
-		return nil, nil
+	if err != nil {
+		return nil, err
 	}
 	return &GitAttributes{attrs: attrs}, nil
 }
