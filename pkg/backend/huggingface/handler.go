@@ -59,34 +59,17 @@ func (h *Handler) register() {
 	h.root.NotFoundHandler = h.next
 }
 
-// withRepoPrefix returns a handler wrapper that prepends a storage prefix to the repo name in route vars.
-// This allows datasets and spaces to be stored in separate directories from models.
-func withRepoPrefix(prefix string, handler http.HandlerFunc) http.HandlerFunc {
-	if prefix == "" {
-		return handler
+// repoStorageName returns the storage name for a repository based on the request.
+// For datasets and spaces, the repo type from the URL is prepended as a storage directory prefix.
+func repoStorageName(r *http.Request) string {
+	vars := mux.Vars(r)
+	repo := vars["repo"]
+	switch vars["repoType"] {
+	case "datasets", "spaces":
+		return vars["repoType"] + "/" + repo
+	default:
+		return repo
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		vars["repo"] = prefix + "/" + vars["repo"]
-		handler(w, r)
-	}
-}
-
-// registerRepoTypeRoutes registers all repo-type-specific routes.
-// apiPrefix is the API path prefix (e.g., "/api/models", "/api/datasets", "/api/spaces").
-// resolvePrefix is the resolve path prefix (e.g., "" for models, "/datasets", "/spaces").
-// storagePrefix is the directory prefix for storing repos (e.g., "" for models, "datasets", "spaces").
-func (h *Handler) registerRepoTypeRoutes(r *mux.Router, apiPrefix string, resolvePrefix string, storagePrefix string) {
-	wrap := func(handler http.HandlerFunc) http.HandlerFunc {
-		return withRepoPrefix(storagePrefix, handler)
-	}
-
-	r.HandleFunc(apiPrefix+"/{repo:.+}/preupload/{revision:.*}", wrap(h.handleHFPreupload)).Methods(http.MethodPost)
-	r.HandleFunc(apiPrefix+"/{repo:.+}/commit/{revision:.*}", wrap(h.handleHFCommit)).Methods(http.MethodPost)
-	r.HandleFunc(apiPrefix+"/{repo:.+}/revision/{revision:.*}", wrap(h.handleHFModelInfoRevision)).Methods(http.MethodGet)
-	r.HandleFunc(apiPrefix+"/{repo:.+}/tree/{refpath:.*}", wrap(h.handleHFTree)).Methods(http.MethodGet)
-	r.HandleFunc(apiPrefix+"/{repo:.+}", wrap(h.handleHFModelInfo)).Methods(http.MethodGet)
-	r.HandleFunc(resolvePrefix+"/{repo:.+}/resolve/{refpath:.*}", wrap(h.handleHFResolve)).Methods(http.MethodGet, http.MethodHead)
 }
 
 // registryHuggingFace registers the HuggingFace-compatible API endpoints.
@@ -99,14 +82,16 @@ func (h *Handler) registryHuggingFace(r *mux.Router) {
 	// YAML validation endpoint - used by huggingface_hub to validate README YAML front matter
 	r.HandleFunc("/api/validate-yaml", h.handleHFValidateYAML).Methods(http.MethodPost)
 
-	// Register routes for datasets
-	h.registerRepoTypeRoutes(r, "/api/datasets", "/datasets", "datasets")
+	// API endpoints for all repo types (models, datasets, spaces)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/preupload/{revision:.*}", h.handleHFPreupload).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/commit/{revision:.*}", h.handleHFCommit).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/revision/{revision:.*}", h.handleHFModelInfoRevision).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tree/{refpath:.*}", h.handleHFTree).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}", h.handleHFModelInfo).Methods(http.MethodGet)
 
-	// Register routes for spaces
-	h.registerRepoTypeRoutes(r, "/api/spaces", "/spaces", "spaces")
-
-	// Register routes for models (no prefix for backward compatibility)
-	h.registerRepoTypeRoutes(r, "/api/models", "", "")
+	// File download endpoints - datasets and spaces use a type prefix, models use the root
+	r.HandleFunc("/{repoType:datasets|spaces}/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc("/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
 }
 
 func responseJSON(w http.ResponseWriter, data any, sc int) {

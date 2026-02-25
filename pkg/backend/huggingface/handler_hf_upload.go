@@ -239,7 +239,7 @@ func (h *Handler) handleHFCommit(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["repo"]
 	revision := vars["revision"]
 
-	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoName)
+	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoStorageName(r))
 	if repoPath == "" {
 		responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
 		return
