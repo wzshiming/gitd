@@ -89,17 +89,16 @@ func (h *Handler) handleHFModelInfo(w http.ResponseWriter, r *http.Request) {
 
 	defaultBranch := repo.DefaultBranch()
 
-	// Get list of files in the repository
-	entries, err := repo.Tree(defaultBranch, "")
+	// Get list of files in the repository (recursive to include files in subdirectories)
+	hfEntries, err := repo.HFTree(defaultBranch, "", &repository.HFTreeOptions{Recursive: true})
 	if err != nil {
 		// Return empty siblings if we can't get the tree
-		entries = nil
+		hfEntries = nil
 	}
 
 	var siblings []HFSibling
-	for _, entry := range entries {
-		// Only include blob entries (files) to keep behavior consistent with handleHFModelInfoRevision.
-		if entry.Type == "blob" {
+	for _, entry := range hfEntries {
+		if entry.Type == repository.HFEntryTypeFile {
 			siblings = append(siblings, HFSibling{
 				RFilename: entry.Path,
 			})
@@ -198,16 +197,16 @@ func (h *Handler) handleHFModelInfoRevision(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get list of files in the repository at the specified revision
-	entries, err := repo.Tree(ref, "")
+	// Get list of files in the repository at the specified revision (recursive to include files in subdirectories)
+	hfEntries, err := repo.HFTree(ref, "", &repository.HFTreeOptions{Recursive: true})
 	if err != nil {
 		// Return empty siblings if we can't get the tree
-		entries = nil
+		hfEntries = nil
 	}
 
 	var siblings []HFSibling
-	for _, entry := range entries {
-		if entry.Type == "blob" {
+	for _, entry := range hfEntries {
+		if entry.Type == repository.HFEntryTypeFile {
 			siblings = append(siblings, HFSibling{
 				RFilename: entry.Path,
 			})
