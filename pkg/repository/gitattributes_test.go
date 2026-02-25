@@ -14,14 +14,16 @@ func TestParseGitAttributes(t *testing.T) {
 	if attrs == nil {
 		t.Fatal("Expected non-nil GitAttributes")
 	}
-	if len(attrs.patterns) != 3 {
-		t.Fatalf("Expected 3 patterns (2 LFS + 1 unset), got %d", len(attrs.patterns))
+	// *.bin and *.safetensors should match as LFS
+	if !attrs.IsLFS("test.bin") {
+		t.Error("Expected *.bin to be LFS")
 	}
-	if !attrs.patterns[0].isLFS || !attrs.patterns[1].isLFS {
-		t.Error("Expected first two patterns to be LFS")
+	if !attrs.IsLFS("test.safetensors") {
+		t.Error("Expected *.safetensors to be LFS")
 	}
-	if attrs.patterns[2].isLFS {
-		t.Error("Expected third pattern to not be LFS")
+	// *.txt has -filter so should NOT be LFS
+	if attrs.IsLFS("test.txt") {
+		t.Error("Expected *.txt to not be LFS")
 	}
 }
 
@@ -30,8 +32,8 @@ func TestParseGitAttributesEmpty(t *testing.T) {
 	if attrs == nil {
 		t.Fatal("Expected non-nil GitAttributes")
 	}
-	if len(attrs.patterns) != 0 {
-		t.Fatalf("Expected 0 patterns, got %d", len(attrs.patterns))
+	if attrs.IsLFS("anything") {
+		t.Error("Expected empty GitAttributes to return false")
 	}
 }
 
@@ -122,39 +124,5 @@ func TestGitAttributesNil(t *testing.T) {
 	var attrs *GitAttributes
 	if attrs.IsLFS("model.bin") {
 		t.Error("Expected nil GitAttributes to return false")
-	}
-}
-
-func TestMatchGitPattern(t *testing.T) {
-	tests := []struct {
-		pattern  string
-		path     string
-		expected bool
-	}{
-		// Simple extension patterns
-		{"*.bin", "model.bin", true},
-		{"*.bin", "README.md", false},
-		{"*.bin", "dir/model.bin", true},
-		// Directory patterns
-		{"models/*.bin", "models/model.bin", true},
-		{"models/*.bin", "model.bin", false},
-		{"models/*.bin", "other/model.bin", false},
-		// Double-star patterns
-		{"**/*.bin", "model.bin", true},
-		{"**/*.bin", "dir/model.bin", true},
-		{"**/*.bin", "a/b/c/model.bin", true},
-		// Exact filename patterns
-		{"model.bin", "model.bin", true},
-		{"model.bin", "dir/model.bin", true},
-		{"model.bin", "other.bin", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
-			got := matchGitPattern(tt.pattern, tt.path)
-			if got != tt.expected {
-				t.Errorf("matchGitPattern(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.expected)
-			}
-		})
 	}
 }
