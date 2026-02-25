@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaListAlt, FaFolderOpen } from 'react-icons/fa';
+import { FaPlus, FaDownload, FaTrash, FaSync, FaClock, FaFolderOpen } from 'react-icons/fa';
 import { prefixIcon } from '../utils/iconUtils';
 import { fetchRepositories, createRepository, deleteRepository, importRepository, syncRepository } from '../api/client';
 import type { RepositoryItem } from '../api/client';
@@ -127,9 +127,6 @@ export function HomePage() {
           <span className="logo"><FaFolderOpen /></span>
           gitd
         </h1>
-        <nav className="header-nav">
-          <Link to="/queue" className="nav-link"><FaListAlt /> Queue</Link>
-        </nav>
       </header>
       <main className="main-content">
         <div className="repo-header">
