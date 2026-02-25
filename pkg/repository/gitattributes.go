@@ -39,17 +39,17 @@ func (g *GitAttributes) IsLFS(filePath string) bool {
 func (r *Repository) GitAttributes(ref string) (*GitAttributes, error) {
 	blob, err := r.Blob(ref, ".gitattributes")
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	reader, err := blob.NewReader()
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	defer reader.Close()
 
 	attrs, err := gitattributes.ReadAttributes(reader, nil, true)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	return &GitAttributes{attrs: attrs}, nil
 }
