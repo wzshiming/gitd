@@ -87,10 +87,10 @@ func (h *Handler) registryHuggingFace(r *mux.Router) {
 	// Repository settings, branch, tag, and refs endpoints
 	// These must be registered before the generic model info catch-all route.
 	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/settings", h.handleHFRepoSettings).Methods(http.MethodPut)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch}", h.handleHFCreateBranch).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch}", h.handleHFDeleteBranch).Methods(http.MethodDelete)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{revision:.*}", h.handleHFCreateTag).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag}", h.handleHFDeleteTag).Methods(http.MethodDelete)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleHFCreateBranch).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleHFDeleteBranch).Methods(http.MethodDelete)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleHFCreateTag).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleHFDeleteTag).Methods(http.MethodDelete)
 	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/refs", h.handleHFListRefs).Methods(http.MethodGet)
 
 	// API endpoints for all repo types (models, datasets, spaces)

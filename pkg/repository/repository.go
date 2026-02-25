@@ -163,6 +163,33 @@ func (r *Repository) Remove() error {
 	return os.RemoveAll(r.repoPath)
 }
 
+// validateRefName checks if a git ref name component is valid.
+// It rejects names that could cause problems with git ref storage.
+func validateRefName(name string) error {
+	if name == "" {
+		return fmt.Errorf("ref name cannot be empty")
+	}
+	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") {
+		return fmt.Errorf("ref name cannot start or end with '/'")
+	}
+	if strings.HasPrefix(name, ".") || strings.Contains(name, "..") {
+		return fmt.Errorf("ref name cannot start with '.' or contain '..'")
+	}
+	if strings.HasSuffix(name, ".lock") {
+		return fmt.Errorf("ref name cannot end with '.lock'")
+	}
+	if strings.ContainsAny(name, " ~^:?*[\\") {
+		return fmt.Errorf("ref name contains invalid characters")
+	}
+	if strings.Contains(name, "@{") {
+		return fmt.Errorf("ref name cannot contain '@{'")
+	}
+	if strings.Contains(name, "//") {
+		return fmt.Errorf("ref name cannot contain consecutive slashes")
+	}
+	return nil
+}
+
 // Tags returns a list of tag names in the repository.
 func (r *Repository) Tags() ([]string, error) {
 	tagsIter, err := r.repo.Tags()
@@ -197,6 +224,9 @@ func (r *Repository) ResolveRevision(rev string) (string, error) {
 
 // CreateBranch creates a new branch pointing to the given revision.
 func (r *Repository) CreateBranch(name string, revision string) error {
+	if err := validateRefName(name); err != nil {
+		return fmt.Errorf("invalid branch name %q: %w", name, err)
+	}
 	if revision == "" {
 		revision = r.DefaultBranch()
 	}
@@ -217,6 +247,9 @@ func (r *Repository) DeleteBranch(name string) error {
 
 // CreateTag creates a lightweight tag pointing to the given revision.
 func (r *Repository) CreateTag(name string, revision string) error {
+	if err := validateRefName(name); err != nil {
+		return fmt.Errorf("invalid tag name %q: %w", name, err)
+	}
 	if revision == "" {
 		revision = r.DefaultBranch()
 	}
@@ -236,17 +269,29 @@ func (r *Repository) DeleteTag(name string) error {
 }
 
 // BranchExists checks if a branch with the given name exists.
-func (r *Repository) BranchExists(name string) bool {
+func (r *Repository) BranchExists(name string) (bool, error) {
 	refName := plumbing.NewBranchReferenceName(name)
 	_, err := r.repo.Storer.Reference(refName)
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	if err == plumbing.ErrReferenceNotFound {
+		return false, nil
+	}
+	return false, err
 }
 
 // TagExists checks if a tag with the given name exists.
-func (r *Repository) TagExists(name string) bool {
+func (r *Repository) TagExists(name string) (bool, error) {
 	refName := plumbing.NewTagReferenceName(name)
 	_, err := r.repo.Storer.Reference(refName)
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	if err == plumbing.ErrReferenceNotFound {
+		return false, nil
+	}
+	return false, err
 }
 
 // RefHash returns the commit hash a ref (branch or tag) points to.

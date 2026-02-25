@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
@@ -154,17 +152,6 @@ func (h *Handler) handleHFMoveRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clean up empty parent directories of the source
-	parentDir := filepath.Dir(fromPath)
-	for parentDir != h.storage.RepositoriesDir() {
-		entries, err := os.ReadDir(parentDir)
-		if err != nil || len(entries) > 0 {
-			break
-		}
-		os.Remove(parentDir)
-		parentDir = filepath.Dir(parentDir)
-	}
-
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -217,14 +204,22 @@ func (h *Handler) handleHFCreateBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if branch already exists
-	if repo.BranchExists(branch) {
+	exists, err := repo.BranchExists(branch)
+	if err != nil {
+		responseJSON(w, fmt.Errorf("failed to check branch %q: %v", branch, err), http.StatusInternalServerError)
+		return
+	}
+	if exists {
 		responseJSON(w, fmt.Errorf("branch %q already exists", branch), http.StatusConflict)
 		return
 	}
 
 	var req HFCreateBranchRequest
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	revision := req.StartingPoint
@@ -264,7 +259,12 @@ func (h *Handler) handleHFDeleteBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !repo.BranchExists(branch) {
+	exists, err := repo.BranchExists(branch)
+	if err != nil {
+		responseJSON(w, fmt.Errorf("failed to check branch %q: %v", branch, err), http.StatusInternalServerError)
+		return
+	}
+	if !exists {
 		responseJSON(w, fmt.Errorf("branch %q not found", branch), http.StatusNotFound)
 		return
 	}
@@ -277,11 +277,11 @@ func (h *Handler) handleHFDeleteBranch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFCreateTag handles POST /api/{repoType}s/{repo}/tag/{revision}
+// handleHFCreateTag handles POST /api/{repoType}s/{repo}/tag/{tag}
 func (h *Handler) handleHFCreateTag(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
-	revision := vars["revision"]
+	revision := vars["tag"] // URL variable is the revision to tag from
 
 	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoStorageName(r))
 	if repoPath == "" {
@@ -313,7 +313,12 @@ func (h *Handler) handleHFCreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if tag already exists
-	if repo.TagExists(req.Tag) {
+	exists, err := repo.TagExists(req.Tag)
+	if err != nil {
+		responseJSON(w, fmt.Errorf("failed to check tag %q: %v", req.Tag, err), http.StatusInternalServerError)
+		return
+	}
+	if exists {
 		responseJSON(w, fmt.Errorf("tag %q already exists", req.Tag), http.StatusConflict)
 		return
 	}
@@ -348,7 +353,12 @@ func (h *Handler) handleHFDeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !repo.TagExists(tag) {
+	exists, err := repo.TagExists(tag)
+	if err != nil {
+		responseJSON(w, fmt.Errorf("failed to check tag %q: %v", tag, err), http.StatusInternalServerError)
+		return
+	}
+	if !exists {
 		responseJSON(w, fmt.Errorf("tag %q not found", tag), http.StatusNotFound)
 		return
 	}

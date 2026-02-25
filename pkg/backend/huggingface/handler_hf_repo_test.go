@@ -241,11 +241,12 @@ func TestHuggingFaceCreateAndDeleteBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create branch: %v", err)
 	}
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		t.Fatalf("Expected 200 for create branch, got %d: %s", resp.StatusCode, respBody)
 	}
+	resp.Body.Close()
 
 	// Verify the branch exists via refs endpoint
 	resp, err = http.Get(endpoint + "/api/models/test-user/branch-model/refs")
@@ -389,11 +390,12 @@ func TestHuggingFaceCreateAndDeleteTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create tag: %v", err)
 	}
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		t.Fatalf("Expected 200 for create tag, got %d: %s", resp.StatusCode, respBody)
 	}
+	resp.Body.Close()
 
 	// Verify tag exists via refs endpoint
 	resp, err = http.Get(endpoint + "/api/models/test-user/tag-model/refs")
