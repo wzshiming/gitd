@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,6 +64,19 @@ func runHFCmd(t *testing.T, endpoint string, args ...string) string {
 		t.Fatalf("HF command failed: hf %s\nError: %v\nOutput: %s", strings.Join(args, " "), err, output)
 	}
 	return string(output)
+}
+
+// runHFCmdMayFail runs the hf CLI and returns output and error without failing.
+func runHFCmdMayFail(t *testing.T, endpoint string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "hf", args...)
+	cmd.Env = append(os.Environ(),
+		"HF_ENDPOINT="+endpoint,
+		"HF_HUB_DISABLE_TELEMETRY=1",
+		"HF_TOKEN=dummy-token",
+	)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }
 
 func TestHuggingFaceUploadWithHFCLI(t *testing.T) {
@@ -448,4 +462,224 @@ func TestHuggingFaceUploadAndDownloadRoundTrip(t *testing.T) {
 			t.Errorf("Downloaded content mismatch for %s: got %q, want %q", file.path, content, file.content)
 		}
 	}
+}
+
+func TestHuggingFaceRepoCreateAndDeleteE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI repo create/delete test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create a repo via hf CLI
+	runHFCmd(t, endpoint, "repo", "create", "test-user/cli-model", "--exist-ok")
+
+	// Upload a file to verify it works
+	uploadDir, err := os.MkdirTemp("", "hf-repo-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(uploadDir)
+
+	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# CLI Model\n"), 0644); err != nil {
+		t.Fatalf("Failed to create README: %v", err)
+	}
+
+	runHFCmd(t, endpoint, "upload", "test-user/cli-model", uploadDir, ".", "--commit-message", "Test upload")
+
+	// Verify the file exists
+	resp, err := http.Get(endpoint + "/test-user/cli-model/resolve/main/README.md")
+	if err != nil {
+		t.Fatalf("Failed to get file: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", resp.StatusCode)
+	}
+
+	// Delete the repo via hf CLI
+	runHFCmd(t, endpoint, "repo", "delete", "test-user/cli-model")
+
+	// Verify the repo is gone
+	resp, err = http.Get(endpoint + "/api/models/test-user/cli-model")
+	if err != nil {
+		t.Fatalf("Failed to check repo: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("Expected 404 after delete, got %d", resp.StatusCode)
+	}
+}
+
+func TestHuggingFaceRepoMoveE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI repo move test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create and populate a repo
+	uploadDir, err := os.MkdirTemp("", "hf-move-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(uploadDir)
+
+	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# Move Test\n"), 0644); err != nil {
+		t.Fatalf("Failed to create README: %v", err)
+	}
+
+	runHFCmd(t, endpoint, "upload", "old-user/move-model", uploadDir, ".", "--commit-message", "Before move")
+
+	// Move the repo
+	runHFCmd(t, endpoint, "repo", "move", "old-user/move-model", "new-user/move-model")
+
+	// Verify old location is gone
+	resp, err := http.Get(endpoint + "/api/models/old-user/move-model")
+	if err != nil {
+		t.Fatalf("Failed to check old repo: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("Expected 404 for old location, got %d", resp.StatusCode)
+	}
+
+	// Verify file at new location
+	resp, err = http.Get(endpoint + "/new-user/move-model/resolve/main/README.md")
+	if err != nil {
+		t.Fatalf("Failed to get file: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200 for new location, got %d", resp.StatusCode)
+	}
+
+	content, _ := io.ReadAll(resp.Body)
+	if string(content) != "# Move Test\n" {
+		t.Errorf("Unexpected content: %q", content)
+	}
+}
+
+func TestHuggingFaceRepoSettingsE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI repo settings test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create a repo
+	runHFCmd(t, endpoint, "repo", "create", "test-user/settings-model", "--exist-ok")
+
+	// Update settings via CLI
+	runHFCmd(t, endpoint, "repo", "settings", "test-user/settings-model", "--private")
+	runHFCmd(t, endpoint, "repo", "settings", "test-user/settings-model", "--gated", "auto")
+}
+
+func TestHuggingFaceRepoBranchE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI branch test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create and populate a repo
+	uploadDir, err := os.MkdirTemp("", "hf-branch-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(uploadDir)
+
+	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# Branch Test\n"), 0644); err != nil {
+		t.Fatalf("Failed to create README: %v", err)
+	}
+
+	runHFCmd(t, endpoint, "upload", "test-user/branch-model", uploadDir, ".", "--commit-message", "Initial commit")
+
+	// Create a branch
+	runHFCmd(t, endpoint, "repo", "branch", "create", "test-user/branch-model", "dev")
+
+	// Delete the branch
+	runHFCmd(t, endpoint, "repo", "branch", "delete", "test-user/branch-model", "dev")
+}
+
+func TestHuggingFaceRepoTagE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI tag test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create and populate a repo
+	uploadDir, err := os.MkdirTemp("", "hf-tag-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(uploadDir)
+
+	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# Tag Test\n"), 0644); err != nil {
+		t.Fatalf("Failed to create README: %v", err)
+	}
+
+	runHFCmd(t, endpoint, "upload", "test-user/tag-model", uploadDir, ".", "--commit-message", "Initial commit")
+
+	// Create a tag
+	runHFCmd(t, endpoint, "repo", "tag", "create", "test-user/tag-model", "v1.0", "-m", "First release")
+
+	// List tags
+	output := runHFCmd(t, endpoint, "repo", "tag", "list", "test-user/tag-model")
+	if !strings.Contains(output, "v1.0") {
+		t.Errorf("Expected tag 'v1.0' in output, got: %s", output)
+	}
+
+	// Delete the tag
+	runHFCmd(t, endpoint, "repo", "tag", "delete", "test-user/tag-model", "v1.0", "--yes")
+
+	// Verify tag is gone
+	output = runHFCmd(t, endpoint, "repo", "tag", "list", "test-user/tag-model")
+	if strings.Contains(output, "v1.0") {
+		t.Errorf("Tag 'v1.0' should have been deleted, but still found in output: %s", output)
+	}
+}
+
+func TestHuggingFaceRepoDatasetBranchTagE2E(t *testing.T) {
+	if _, err := exec.LookPath("hf"); err != nil {
+		t.Skip("hf CLI not available, skipping HF CLI dataset branch/tag test")
+	}
+
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create and populate a dataset repo
+	uploadDir, err := os.MkdirTemp("", "hf-dataset-bt-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(uploadDir)
+
+	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# Dataset BT\n"), 0644); err != nil {
+		t.Fatalf("Failed to create README: %v", err)
+	}
+
+	runHFCmd(t, endpoint, "upload", "test-user/bt-dataset", uploadDir, ".", "--repo-type", "dataset", "--commit-message", "Initial commit")
+
+	// Create branch on dataset
+	runHFCmd(t, endpoint, "repo", "branch", "create", "test-user/bt-dataset", "dev", "--repo-type", "dataset")
+
+	// Create tag on dataset
+	runHFCmd(t, endpoint, "repo", "tag", "create", "test-user/bt-dataset", "v1.0", "--repo-type", "dataset")
+
+	// List tags on dataset
+	output := runHFCmd(t, endpoint, "repo", "tag", "list", "test-user/bt-dataset", "--repo-type", "dataset")
+	if !strings.Contains(output, "v1.0") {
+		t.Errorf("Expected tag 'v1.0' in dataset tags, got: %s", output)
+	}
+
+	// Delete branch and tag
+	runHFCmd(t, endpoint, "repo", "branch", "delete", "test-user/bt-dataset", "dev", "--repo-type", "dataset")
+	runHFCmd(t, endpoint, "repo", "tag", "delete", "test-user/bt-dataset", "v1.0", "--repo-type", "dataset", "--yes")
 }

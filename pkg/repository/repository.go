@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -160,6 +161,109 @@ func (r *Repository) Branches() ([]string, error) {
 
 func (r *Repository) Remove() error {
 	return os.RemoveAll(r.repoPath)
+}
+
+// Tags returns a list of tag names in the repository.
+func (r *Repository) Tags() ([]string, error) {
+	tagsIter, err := r.repo.Tags()
+	if err != nil {
+		return nil, err
+	}
+
+	var tags []string
+	err = tagsIter.ForEach(func(ref *plumbing.Reference) error {
+		name := ref.Name().Short()
+		tags = append(tags, name)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return tags, nil
+}
+
+// ResolveRevision resolves a revision string (branch name, tag, or commit SHA) to a commit hash.
+func (r *Repository) ResolveRevision(rev string) (string, error) {
+	if rev == "" {
+		rev = r.DefaultBranch()
+	}
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(rev))
+	if err != nil {
+		return "", err
+	}
+	return hash.String(), nil
+}
+
+// CreateBranch creates a new branch pointing to the given revision.
+func (r *Repository) CreateBranch(name string, revision string) error {
+	if revision == "" {
+		revision = r.DefaultBranch()
+	}
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(revision))
+	if err != nil {
+		return fmt.Errorf("failed to resolve revision %q: %w", revision, err)
+	}
+	refName := plumbing.NewBranchReferenceName(name)
+	ref := plumbing.NewHashReference(refName, *hash)
+	return r.repo.Storer.SetReference(ref)
+}
+
+// DeleteBranch deletes a branch from the repository.
+func (r *Repository) DeleteBranch(name string) error {
+	refName := plumbing.NewBranchReferenceName(name)
+	return r.repo.Storer.RemoveReference(refName)
+}
+
+// CreateTag creates a lightweight tag pointing to the given revision.
+func (r *Repository) CreateTag(name string, revision string) error {
+	if revision == "" {
+		revision = r.DefaultBranch()
+	}
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(revision))
+	if err != nil {
+		return fmt.Errorf("failed to resolve revision %q: %w", revision, err)
+	}
+	refName := plumbing.NewTagReferenceName(name)
+	ref := plumbing.NewHashReference(refName, *hash)
+	return r.repo.Storer.SetReference(ref)
+}
+
+// DeleteTag deletes a tag from the repository.
+func (r *Repository) DeleteTag(name string) error {
+	refName := plumbing.NewTagReferenceName(name)
+	return r.repo.Storer.RemoveReference(refName)
+}
+
+// BranchExists checks if a branch with the given name exists.
+func (r *Repository) BranchExists(name string) bool {
+	refName := plumbing.NewBranchReferenceName(name)
+	_, err := r.repo.Storer.Reference(refName)
+	return err == nil
+}
+
+// TagExists checks if a tag with the given name exists.
+func (r *Repository) TagExists(name string) bool {
+	refName := plumbing.NewTagReferenceName(name)
+	_, err := r.repo.Storer.Reference(refName)
+	return err == nil
+}
+
+// RefHash returns the commit hash a ref (branch or tag) points to.
+func (r *Repository) RefHash(refName plumbing.ReferenceName) (string, error) {
+	ref, err := r.repo.Storer.Reference(refName)
+	if err != nil {
+		return "", err
+	}
+	return ref.Hash().String(), nil
+}
+
+// Move renames the repository directory to newPath.
+func (r *Repository) Move(newPath string) error {
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		return err
+	}
+	return os.Rename(r.repoPath, newPath)
 }
 
 func (r *Repository) IsMirror() (bool, string, error) {
