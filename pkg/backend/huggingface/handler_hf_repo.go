@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
 
-	"github.com/wzshiming/gitd/pkg/repository"
+	"github.com/wzshiming/hfd/pkg/repository"
 )
 
 // HFDeleteRepoRequest represents the delete repo request body.

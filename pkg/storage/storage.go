@@ -3,7 +3,7 @@ package storage
 import (
 	"path/filepath"
 
-	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/lfs"
 )
 
 type Storage struct {

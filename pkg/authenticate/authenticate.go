@@ -10,13 +10,13 @@ func Authenticate(u, p string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
 		if !ok {
-			w.Header().Set("WWW-Authenticate", `Basic realm="gitd"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="hfd"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		if username != u || password != p {
-			w.Header().Set("WWW-Authenticate", `Basic realm="gitd"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="hfd"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

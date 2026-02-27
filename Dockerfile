@@ -22,20 +22,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=1 go build -o /gitd ./cmd/gitd
+    CGO_ENABLED=1 go build -o /hfd ./cmd/hfd
 
 ##########################################
 
-FROM ${IMAGE_PREFIX}library/alpine:${ALPINE_VERSION} AS gitd
+FROM ${IMAGE_PREFIX}library/alpine:${ALPINE_VERSION} AS hfd
 
 RUN --mount=type=cache,target=/var/cache/apk \
     apk add ca-certificates git s3fs-fuse && \
     update-ca-certificates
 
-COPY --from=builder /gitd /usr/local/bin/gitd
+COPY --from=builder /hfd /usr/local/bin/hfd
 
 EXPOSE 9418
 EXPOSE 8080
 EXPOSE 2222
 
-ENTRYPOINT ["/usr/local/bin/gitd"]
+ENTRYPOINT ["/usr/local/bin/hfd"]

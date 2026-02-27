@@ -9,18 +9,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wzshiming/gitd/internal/handlers"
-	"github.com/wzshiming/gitd/internal/utils"
-	"github.com/wzshiming/gitd/pkg/authenticate"
-	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
-	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
-	"github.com/wzshiming/gitd/pkg/backend/huggingface"
-	backendlfs "github.com/wzshiming/gitd/pkg/backend/lfs"
-	backendssh "github.com/wzshiming/gitd/pkg/backend/ssh"
-	"github.com/wzshiming/gitd/pkg/lfs"
-	"github.com/wzshiming/gitd/pkg/repository"
-	"github.com/wzshiming/gitd/pkg/s3fs"
-	"github.com/wzshiming/gitd/pkg/storage"
+	"github.com/wzshiming/hfd/internal/handlers"
+	"github.com/wzshiming/hfd/internal/utils"
+	"github.com/wzshiming/hfd/pkg/authenticate"
+	backendgit "github.com/wzshiming/hfd/pkg/backend/git"
+	backendhttp "github.com/wzshiming/hfd/pkg/backend/http"
+	backendhuggingface "github.com/wzshiming/hfd/pkg/backend/huggingface"
+	backendlfs "github.com/wzshiming/hfd/pkg/backend/lfs"
+	backendssh "github.com/wzshiming/hfd/pkg/backend/ssh"
+	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/repository"
+	"github.com/wzshiming/hfd/pkg/s3fs"
+	"github.com/wzshiming/hfd/pkg/storage"
 )
 
 var (
@@ -80,7 +80,7 @@ func main() {
 		storage.WithRootDir(absRootDir),
 	}
 
-	log.Printf("Starting gitd server on %s, serving repositories from %s\n", addr, absRootDir)
+	log.Printf("Starting hfd server on %s, serving repositories from %s\n", addr, absRootDir)
 
 	if s3Endpoint != "" && s3Bucket != "" {
 		if s3Repositories {
@@ -139,11 +139,11 @@ func main() {
 	}
 	var handler http.Handler
 
-	handler = huggingface.NewHandler(
-		huggingface.WithStorage(storage),
-		huggingface.WithNext(handler),
-		huggingface.WithProxyManager(proxyManager),
-		huggingface.WithLFSProxyManager(lfsProxyManager),
+	handler = backendhuggingface.NewHandler(
+		backendhuggingface.WithStorage(storage),
+		backendhuggingface.WithNext(handler),
+		backendhuggingface.WithProxyManager(proxyManager),
+		backendhuggingface.WithLFSProxyManager(lfsProxyManager),
 	)
 
 	handler = backendlfs.NewHandler(

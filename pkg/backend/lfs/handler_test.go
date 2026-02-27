@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	backendlfs "github.com/wzshiming/gitd/pkg/backend/lfs"
-	"github.com/wzshiming/gitd/pkg/lfs"
-	"github.com/wzshiming/gitd/pkg/repository"
-	"github.com/wzshiming/gitd/pkg/storage"
+	"github.com/wzshiming/hfd/internal/utils"
+	backendlfs "github.com/wzshiming/hfd/pkg/backend/lfs"
+	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/repository"
+	"github.com/wzshiming/hfd/pkg/storage"
 )
 
 func TestLFSProxyMode(t *testing.T) {

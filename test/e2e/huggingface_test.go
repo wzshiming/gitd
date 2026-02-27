@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
-	"github.com/wzshiming/gitd/pkg/backend/huggingface"
-	backendlfs "github.com/wzshiming/gitd/pkg/backend/lfs"
-	"github.com/wzshiming/gitd/pkg/storage"
+	backendhttp "github.com/wzshiming/hfd/pkg/backend/http"
+	backendhuggingface "github.com/wzshiming/hfd/pkg/backend/huggingface"
+	backendlfs "github.com/wzshiming/hfd/pkg/backend/lfs"
+	"github.com/wzshiming/hfd/pkg/storage"
 )
 
 func setupTestServer(t *testing.T) (*httptest.Server, string) {
@@ -30,8 +30,8 @@ func setupTestServer(t *testing.T) (*httptest.Server, string) {
 	// Set up handler chain (same order as main.go)
 	var handler http.Handler
 
-	handler = huggingface.NewHandler(
-		huggingface.WithStorage(store),
+	handler = backendhuggingface.NewHandler(
+		backendhuggingface.WithStorage(store),
 	)
 
 	handler = backendlfs.NewHandler(
@@ -359,8 +359,8 @@ func TestHuggingFaceRepoTypeIsolationE2E(t *testing.T) {
 
 	// Download each type and verify isolation
 	for _, tc := range []struct {
-		repoType       string
-		resolvePrefix  string
+		repoType        string
+		resolvePrefix   string
 		expectedContent string
 	}{
 		{"model", "", "model content\n"},

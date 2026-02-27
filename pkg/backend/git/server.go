@@ -9,8 +9,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	"github.com/wzshiming/gitd/pkg/repository"
+	"github.com/wzshiming/hfd/internal/utils"
+	"github.com/wzshiming/hfd/pkg/repository"
 )
 
 // Server implements the git protocol (git://) server.

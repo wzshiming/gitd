@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/lfs"
 )
 
 type EntryType string

@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
 
-	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/lfs"
 )
 
 var (

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/gitd/pkg/backend/huggingface"
+	backendhuggingface "github.com/wzshiming/hfd/pkg/backend/huggingface"
 )
 
 // createRepoAndCommit creates a repo and commits a file, returning the commit SHA.
@@ -39,7 +39,7 @@ func createRepoAndCommit(t *testing.T, endpoint, repoType, org, name string) str
 	}
 	defer resp.Body.Close()
 
-	var commitResult huggingface.HFCommitResponse
+	var commitResult backendhuggingface.HFCommitResponse
 	if err := json.NewDecoder(resp.Body).Decode(&commitResult); err != nil {
 		t.Fatalf("Failed to decode commit response: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestHuggingFaceCreateAndDeleteBranch(t *testing.T) {
 		t.Fatalf("Expected 200 for refs, got %d", resp.StatusCode)
 	}
 
-	var refs huggingface.HFGitRefs
+	var refs backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestHuggingFaceCreateAndDeleteBranch(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var refs2 huggingface.HFGitRefs
+	var refs2 backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs2); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestHuggingFaceCreateBranchFromRevision(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var refs huggingface.HFGitRefs
+	var refs backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestHuggingFaceCreateAndDeleteTag(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var refs huggingface.HFGitRefs
+	var refs backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestHuggingFaceCreateAndDeleteTag(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var refs2 huggingface.HFGitRefs
+	var refs2 backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs2); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestHuggingFaceListRefs(t *testing.T) {
 		t.Fatalf("Expected 200, got %d", resp.StatusCode)
 	}
 
-	var refs huggingface.HFGitRefs
+	var refs backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestHuggingFaceDatasetBranchAndTag(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var refs huggingface.HFGitRefs
+	var refs backendhuggingface.HFGitRefs
 	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
 		t.Fatalf("Failed to decode refs: %v", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/wzshiming/gitd/internal/utils"
+	"github.com/wzshiming/hfd/internal/utils"
 )
 
 func (r *Repository) Stateless(ctx context.Context, output io.Writer, input io.Reader, service string, advertise bool) error {

@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	"github.com/wzshiming/gitd/pkg/repository"
+	"github.com/wzshiming/hfd/internal/utils"
+	"github.com/wzshiming/hfd/pkg/repository"
 )
 
 // Signer is an alias for ssh.Signer to avoid requiring callers to import golang.org/x/crypto/ssh.

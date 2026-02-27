@@ -89,7 +89,7 @@ func (m *ProxyManager) FetchFromProxy(ctx context.Context, sourceURL string, obj
 // FetchSingleObject fetches a single LFS object from upstream with single-flight
 // deduplication using ioswmr.
 func (m *ProxyManager) fetchSingleObject(ctx context.Context, oid string, size int64, downloadAction Action) {
-	tmp, err := os.CreateTemp("", "gitd-lfs-proxy-*")
+	tmp, err := os.CreateTemp("", "hfd-lfs-proxy-*")
 	if err != nil {
 		log.Printf("LFS proxy: failed to create temp file for object %s: %v", oid, err)
 		return
