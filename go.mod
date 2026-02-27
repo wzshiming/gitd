@@ -9,9 +9,7 @@ require (
 	github.com/git-lfs/git-lfs/v3 v3.7.1
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/gorilla/context v1.1.2
-	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/wzshiming/httpseek v0.5.0
 	golang.org/x/crypto v0.45.0
 )
@@ -22,7 +20,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/alexbrainman/sspi v0.0.0-20210105120005-909beea2cc74 // indirect
 	github.com/avast/retry-go v2.4.2+incompatible // indirect
-	github.com/cloudflare/circl v1.6.1 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/dpotapov/go-spnego v0.0.0-20210315154721-298b63a54430 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
