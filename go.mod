@@ -1,4 +1,4 @@
-module github.com/wzshiming/gitd
+module github.com/wzshiming/hfd
 
 go 1.25
 

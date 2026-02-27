@@ -15,7 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 
-	"github.com/wzshiming/gitd/internal/utils"
+	"github.com/wzshiming/hfd/internal/utils"
 )
 
 // InitMrror initializes a new bare git repository as a mirror of the remote repository at sourceURL.

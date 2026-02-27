@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
+	"github.com/wzshiming/hfd/internal/utils"
+	backendgit "github.com/wzshiming/hfd/pkg/backend/git"
 )
 
 // runGitCmd runs a git command in the specified directory.
@@ -73,8 +73,8 @@ func TestGitProtocolServer(t *testing.T) {
 		runGitCmd(t, "", "clone", gitURL, cloneDir)
 
 		// Verify .git directory exists
-		gitDir := filepath.Join(cloneDir, ".git")
-		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		hfdir := filepath.Join(cloneDir, ".git")
+		if _, err := os.Stat(hfdir); os.IsNotExist(err) {
 			t.Errorf(".git directory not found in cloned repository")
 		}
 	})

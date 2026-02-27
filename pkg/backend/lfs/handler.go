@@ -6,8 +6,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/wzshiming/gitd/pkg/lfs"
-	"github.com/wzshiming/gitd/pkg/storage"
+	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/storage"
 )
 
 // Handler

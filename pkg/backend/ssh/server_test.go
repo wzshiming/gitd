@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	backendssh "github.com/wzshiming/gitd/pkg/backend/ssh"
+	"github.com/wzshiming/hfd/internal/utils"
+	backendssh "github.com/wzshiming/hfd/pkg/backend/ssh"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -92,8 +92,8 @@ func TestSSHProtocolServer(t *testing.T) {
 		runGitCmd(t, "", env, "clone", sshURL, cloneDir)
 
 		// Verify .git directory exists
-		gitDir := filepath.Join(cloneDir, ".git")
-		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		hfdir := filepath.Join(cloneDir, ".git")
+		if _, err := os.Stat(hfdir); os.IsNotExist(err) {
 			t.Errorf(".git directory not found in cloned repository")
 		}
 	})
@@ -262,8 +262,8 @@ func TestSSHPublicKeyAuth(t *testing.T) {
 		cloneDir := filepath.Join(clientDir, "clone-auth")
 		runGitCmd(t, "", goodEnv, "clone", sshURL, cloneDir)
 
-		gitDir := filepath.Join(cloneDir, ".git")
-		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		hfdir := filepath.Join(cloneDir, ".git")
+		if _, err := os.Stat(hfdir); os.IsNotExist(err) {
 			t.Errorf(".git directory not found in cloned repository")
 		}
 	})

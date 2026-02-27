@@ -2,4 +2,4 @@
 
 .PHONY: run
 run:
-	go run ./cmd/gitd
+	go run ./cmd/hfd

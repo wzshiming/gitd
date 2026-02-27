@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/wzshiming/gitd/pkg/repository"
+	"github.com/wzshiming/hfd/pkg/repository"
 )
 
 func (h *Handler) registryGit(r *mux.Router) {

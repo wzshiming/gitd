@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/gitd/internal/utils"
+	"github.com/wzshiming/hfd/internal/utils"
 )
 
 // RunGitCmd runs a git command in the specified directory.

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/gitd/internal/utils"
-	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
-	"github.com/wzshiming/gitd/pkg/repository"
-	"github.com/wzshiming/gitd/pkg/storage"
+	"github.com/wzshiming/hfd/internal/utils"
+	backendhttp "github.com/wzshiming/hfd/pkg/backend/http"
+	"github.com/wzshiming/hfd/pkg/repository"
+	"github.com/wzshiming/hfd/pkg/storage"
 )
 
 // runGitCmd runs a git command in the specified directory.
@@ -69,8 +69,8 @@ func TestHTTPHandler(t *testing.T) {
 		cloneDir := filepath.Join(clientDir, "clone-empty")
 		runGitCmd(t, "", "clone", upstreamURL, cloneDir)
 
-		gitDir := filepath.Join(cloneDir, ".git")
-		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		hfdir := filepath.Join(cloneDir, ".git")
+		if _, err := os.Stat(hfdir); os.IsNotExist(err) {
 			t.Errorf(".git directory not found in cloned repository")
 		}
 	})
