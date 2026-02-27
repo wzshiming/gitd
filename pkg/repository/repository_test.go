@@ -130,6 +130,13 @@ func TestIsRepository(t *testing.T) {
 	})
 }
 
+func assertDefaultBranch(t *testing.T, repo *Repository, want string) {
+	t.Helper()
+	if branch := repo.DefaultBranch(); branch != want {
+		t.Errorf("DefaultBranch() = %q, want %q", branch, want)
+	}
+}
+
 func TestInitAndOpen(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "repo-test-*")
 	if err != nil {
@@ -148,10 +155,7 @@ func TestInitAndOpen(t *testing.T) {
 		t.Fatal("Init() returned nil repository")
 	}
 
-	// DefaultBranch
-	if branch := repo.DefaultBranch(); branch != "main" {
-		t.Errorf("DefaultBranch() = %q, want %q", branch, "main")
-	}
+	assertDefaultBranch(t, repo, "main")
 
 	// Open
 	repo2, err := Open(repoPath)
@@ -161,9 +165,7 @@ func TestInitAndOpen(t *testing.T) {
 	if repo2 == nil {
 		t.Fatal("Open() returned nil repository")
 	}
-	if branch := repo2.DefaultBranch(); branch != "main" {
-		t.Errorf("Open().DefaultBranch() = %q, want %q", branch, "main")
-	}
+	assertDefaultBranch(t, repo2, "main")
 }
 
 func TestOpenNonexistent(t *testing.T) {
@@ -187,9 +189,7 @@ func TestInitWithDifferentBranch(t *testing.T) {
 		t.Fatalf("Init() error = %v", err)
 	}
 
-	if branch := repo.DefaultBranch(); branch != "develop" {
-		t.Errorf("DefaultBranch() = %q, want %q", branch, "develop")
-	}
+	assertDefaultBranch(t, repo, "develop")
 }
 
 func TestBranchesAndTags(t *testing.T) {

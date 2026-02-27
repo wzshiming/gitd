@@ -43,7 +43,7 @@ func TestNewStorageWithRootDir(t *testing.T) {
 	}
 }
 
-func TestNewStorageMultipleOptions(t *testing.T) {
+func TestNewStorageStoresInitialized(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "storage-test-*")
 	if err != nil {
 		t.Fatal(err)

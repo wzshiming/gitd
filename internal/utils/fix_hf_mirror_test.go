@@ -58,7 +58,8 @@ func TestFixHFMirrorRoundTripper(t *testing.T) {
 	}
 }
 
-// recordingTransport captures the request passed to RoundTrip without making a real HTTP call.
+// recordingTransport is a test double that captures the request passed to RoundTrip
+// without making a real HTTP call, returning a minimal successful response.
 type recordingTransport struct {
 	lastReq *http.Request
 }
