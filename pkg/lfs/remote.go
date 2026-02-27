@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/git-lfs/git-lfs/v3/lfshttp"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 )
 
 // Client handles fetching LFS objects from remote Git LFS servers
@@ -112,7 +115,7 @@ func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFS
 
 	req.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	req.Header.Set("Accept", "application/vnd.git-lfs+json")
-	req.Header.Set("User-Agent", "go-git/5.x")
+	req.Header.Set("User-Agent", capability.DefaultAgent())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -141,6 +144,7 @@ func (a Action) Request(ctx context.Context) (*http.Request, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("User-Agent", lfshttp.UserAgent)
 	for key, value := range a.Header {
 		req.Header.Set(key, value)
 	}

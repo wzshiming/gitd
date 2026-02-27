@@ -1,11 +1,14 @@
 package huggingface
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
 
+	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/gitd/pkg/repository"
 	"github.com/wzshiming/gitd/pkg/storage"
 )
 
@@ -16,6 +19,9 @@ type Handler struct {
 	root *mux.Router
 
 	next http.Handler
+
+	proxyManager    *repository.ProxyManager
+	lfsProxyManager *lfs.ProxyManager
 }
 
 type Option func(*Handler)
@@ -23,6 +29,20 @@ type Option func(*Handler)
 func WithStorage(storage *storage.Storage) Option {
 	return func(h *Handler) {
 		h.storage = storage
+	}
+}
+
+// WithProxyManager sets the repository proxy manager for transparent upstream repository fetching.
+func WithProxyManager(pm *repository.ProxyManager) Option {
+	return func(h *Handler) {
+		h.proxyManager = pm
+	}
+}
+
+// WithLFSProxyManager sets the LFS proxy manager for transparent upstream object fetching.
+func WithLFSProxyManager(pm *lfs.ProxyManager) Option {
+	return func(h *Handler) {
+		h.lfsProxyManager = pm
 	}
 }
 
@@ -96,13 +116,22 @@ func (h *Handler) registryHuggingFace(r *mux.Router) {
 	// API endpoints for all repo types (models, datasets, spaces)
 	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/preupload/{revision:.*}", h.handleHFPreupload).Methods(http.MethodPost)
 	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/commit/{revision:.*}", h.handleHFCommit).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/revision/{revision:.*}", h.handleHFModelInfoRevision).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/revision/{revision:.*}", h.handleHFInfoRevision).Methods(http.MethodGet)
 	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tree/{refpath:.*}", h.handleHFTree).Methods(http.MethodGet)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}", h.handleHFModelInfo).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}", h.handleHFInfo).Methods(http.MethodGet)
 
 	// File download endpoints - datasets and spaces use a type prefix, models use the root
 	r.HandleFunc("/{repoType:datasets|spaces}/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
+}
+
+// openRepo opens a repository, optionally creating a mirror from the proxy source
+// if the repository doesn't exist locally and proxy mode is enabled.
+func (h *Handler) openRepo(ctx context.Context, repoPath, repoName string) (*repository.Repository, error) {
+	if h.proxyManager != nil {
+		return h.proxyManager.OpenOrProxy(ctx, repoPath, repoName, "git-upload-pack")
+	}
+	return repository.Open(repoPath)
 }
 
 func responseJSON(w http.ResponseWriter, data any, sc int) {

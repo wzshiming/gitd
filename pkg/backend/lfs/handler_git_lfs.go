@@ -1,6 +1,7 @@
 package lfs
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,9 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/gitd/pkg/repository"
 )
 
 const (
@@ -30,6 +34,9 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 
 	var responseObjects []*lfsRepresentation
 
+	// Collect missing objects for potential proxy fetch
+	var missingObjects []*lfsRequestVars
+
 	// Create a response object
 	for _, object := range bv.Objects {
 		var exists bool
@@ -49,15 +56,34 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 		if bv.Operation == "upload" {
 			responseObjects = append(responseObjects, lfsRepresent(object, false, true))
 		} else {
-			rep := &lfsRepresentation{
-				Oid:  object.Oid,
-				Size: object.Size,
-				Error: &lfsObjectError{
-					Code:    404,
-					Message: "Not found",
-				},
+			missingObjects = append(missingObjects, object)
+		}
+	}
+
+	// Try to fetch missing objects from proxy source
+	if len(missingObjects) > 0 {
+		proxyURL := h.getProxySourceURL(bv)
+		if proxyURL != "" && h.lfsProxyManager != nil {
+			lfsObjects := make([]lfs.LFSObject, len(missingObjects))
+			for i, obj := range missingObjects {
+				lfsObjects[i] = lfs.LFSObject{Oid: obj.Oid, Size: obj.Size}
 			}
-			responseObjects = append(responseObjects, rep)
+			h.lfsProxyManager.FetchFromProxy(context.Background(), proxyURL, lfsObjects)
+			for _, obj := range missingObjects {
+				responseObjects = append(responseObjects, lfsRepresent(obj, true, false))
+			}
+		} else {
+			for _, obj := range missingObjects {
+				rep := &lfsRepresentation{
+					Oid:  obj.Oid,
+					Size: obj.Size,
+					Error: &lfsObjectError{
+						Code:    404,
+						Message: "Not found",
+					},
+				}
+				responseObjects = append(responseObjects, rep)
+			}
 		}
 	}
 
@@ -69,6 +95,36 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseJSON(w, respobj, http.StatusOK)
+}
+
+// getProxySourceURL returns the upstream LFS source URL for a proxied mirror repository.
+// Returns empty string if proxy is not configured or the repo is not a mirror.
+func (h *Handler) getProxySourceURL(bv *lfsBatchVars) string {
+	if h.lfsProxyManager == nil {
+		return ""
+	}
+
+	repoName := bv.repoName()
+	if repoName == "" {
+		return ""
+	}
+
+	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), repoName)
+	if repoPath == "" {
+		return ""
+	}
+
+	repo, err := repository.Open(repoPath)
+	if err != nil {
+		return ""
+	}
+
+	isMirror, sourceURL, err := repo.IsMirror()
+	if err != nil || !isMirror || sourceURL == "" {
+		return ""
+	}
+
+	return sourceURL
 }
 
 // handlePutContent receives data from the client and puts it into the content store
@@ -92,6 +148,13 @@ func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 // handleGetContent gets the content from the content store
 func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
+	if h.lfsProxyManager != nil {
+		pf := h.lfsProxyManager.GetFlight(rv.Oid)
+		if pf != nil {
+			http.ServeContent(w, r, rv.Oid, time.Now(), pf.NewReadSeeker())
+			return
+		}
+	}
 	if h.storage.S3Store() != nil {
 		url, err := h.storage.S3Store().SignGet(rv.Oid)
 		if err != nil {
@@ -258,6 +321,13 @@ type lfsBatchVars struct {
 	Transfers []string          `json:"transfers,omitempty"`
 	Operation string            `json:"operation"`
 	Objects   []*lfsRequestVars `json:"objects"`
+}
+
+func (bv *lfsBatchVars) repoName() string {
+	if len(bv.Objects) == 0 {
+		return ""
+	}
+	return bv.Objects[0].Repo
 }
 
 type lfsBatchResponse struct {

@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,7 +42,7 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoName, service)
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseText(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
@@ -93,7 +94,7 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoName, service)
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseText(w, fmt.Sprintf("repository %q not found", repoName), http.StatusNotFound)
@@ -122,4 +123,15 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 		responseText(w, fmt.Sprintf("Failed to get info refs for %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
+}
+
+// openRepo opens a repository, optionally creating a mirror from the proxy source
+// if the repository doesn't exist locally and proxy mode is enabled.
+// Proxy is only used for read operations (git-upload-pack).
+func (h *Handler) openRepo(ctx context.Context, repoPath, repoName, service string) (*repository.Repository, error) {
+	if h.proxyManager != nil {
+		return h.proxyManager.OpenOrProxy(ctx, repoPath, repoName, service)
+	}
+
+	return repository.Open(repoPath)
 }

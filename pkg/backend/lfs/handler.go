@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/wzshiming/gitd/pkg/lfs"
 	"github.com/wzshiming/gitd/pkg/storage"
 )
 
@@ -16,6 +17,8 @@ type Handler struct {
 	root *mux.Router
 
 	next http.Handler
+
+	lfsProxyManager *lfs.ProxyManager
 }
 
 type Option func(*Handler)
@@ -23,6 +26,13 @@ type Option func(*Handler)
 func WithStorage(storage *storage.Storage) Option {
 	return func(h *Handler) {
 		h.storage = storage
+	}
+}
+
+// WithLFSProxyManager sets the LFS proxy manager for transparent upstream object fetching.
+func WithLFSProxyManager(pm *lfs.ProxyManager) Option {
+	return func(h *Handler) {
+		h.lfsProxyManager = pm
 	}
 }
 

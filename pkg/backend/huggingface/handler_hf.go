@@ -1,11 +1,13 @@
 package huggingface
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -17,7 +19,7 @@ import (
 type HFModelInfo struct {
 	ID            string      `json:"id"`
 	ModelID       string      `json:"modelId"`
-	SHA           string      `json:"sha,omitempty"`
+	SHA           string      `json:"sha"`
 	Private       bool        `json:"private"`
 	Disabled      bool        `json:"disabled"`
 	Gated         bool        `json:"gated"`
@@ -35,9 +37,9 @@ type HFSibling struct {
 	RFilename string `json:"rfilename"`
 }
 
-// handleHFModelInfo handles the /api/models/{repo_id} endpoint
+// handleHFInfo handles the /api/models/{repo_id} endpoint
 // This is used by huggingface_hub to get model metadata
-func (h *Handler) handleHFModelInfo(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleHFInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 
@@ -47,7 +49,7 @@ func (h *Handler) handleHFModelInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoStorageName(r))
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
@@ -115,7 +117,7 @@ func (h *Handler) handleHFTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoStorageName(r))
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
@@ -143,9 +145,9 @@ func (h *Handler) handleHFTree(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, entries, http.StatusOK)
 }
 
-// handleHFModelInfoRevision handles the /api/models/{repo_id}/revision/{revision} endpoint
+// handleHFInfoRevision handles the /api/models/{repo_id}/revision/{revision} endpoint
 // This is used by huggingface_hub for snapshot_download to get model info at specific revision
-func (h *Handler) handleHFModelInfoRevision(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleHFInfoRevision(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	repoName := vars["repo"]
@@ -157,7 +159,7 @@ func (h *Handler) handleHFModelInfoRevision(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoStorageName(r))
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
@@ -170,8 +172,17 @@ func (h *Handler) handleHFModelInfoRevision(w http.ResponseWriter, r *http.Reque
 	// Get list of files in the repository at the specified revision (recursive to include files in subdirectories)
 	hfEntries, err := repo.HFTree(ref, "", &repository.HFTreeOptions{Recursive: true})
 	if err != nil {
-		// Return empty siblings if we can't get the tree
-		hfEntries = nil
+		//TODO(@wzshiming): In hf binarys, it only use main as default branch,
+		// if the ref is main but not exist, we can try to fallback to the real default branch to be compatible with hf client.
+		defaultBranch := repo.DefaultBranch()
+		if ref == "main" && defaultBranch != ref {
+			hfEntries, err = repo.HFTree(defaultBranch, "", &repository.HFTreeOptions{Recursive: true})
+			if err != nil {
+				hfEntries = nil
+			} else {
+				ref = defaultBranch
+			}
+		}
 	}
 
 	var siblings []HFSibling
@@ -221,7 +232,7 @@ func (h *Handler) handleHFResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoStorageName(r))
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)
@@ -274,8 +285,35 @@ func (h *Handler) handleHFResolve(w http.ResponseWriter, r *http.Request) {
 				}
 				content, stat, err := h.storage.ContentStore().Get(ptr.Oid)
 				if err != nil {
-					responseJSON(w, fmt.Errorf("LFS object %q not found for file %q in repository %q at revision %q", ptr.Oid, path, repoName, ref), http.StatusNotFound)
-					return
+					// Try proxy fetch if proxy manager is configured
+					if h.lfsProxyManager != nil {
+						sourceURL := h.getLFSProxySourceURL(repoPath)
+						if sourceURL != "" {
+							h.lfsProxyManager.FetchFromProxy(context.Background(), sourceURL, []lfs.LFSObject{
+								{Oid: ptr.Oid, Size: ptr.Size},
+							})
+
+							pf := h.lfsProxyManager.GetFlight(ptr.Oid)
+							// TODO(@wzshiming) We should ideally have a better way to wait for the proxy fetch to complete instead of polling like this,
+							// but this is good enough for now since the client will retry if the file is not ready yet.
+							for i := 0; i != 5; i++ {
+								time.Sleep(500 * time.Millisecond)
+								pf = h.lfsProxyManager.GetFlight(ptr.Oid)
+								if pf != nil {
+									break
+								}
+							}
+
+							if pf != nil {
+								http.ServeContent(w, r, ptr.Oid, time.Now(), pf.NewReadSeeker())
+								return
+							}
+						}
+					}
+					if err != nil {
+						responseJSON(w, fmt.Errorf("LFS object %q not found for file %q in repository %q at revision %q", ptr.Oid, path, repoName, ref), http.StatusNotFound)
+						return
+					}
 				}
 				defer func() {
 					_ = content.Close()
@@ -316,4 +354,24 @@ func (h *Handler) handleHFResolve(w http.ResponseWriter, r *http.Request) {
 		// Log but don't send error - we may have already written partial content
 		return
 	}
+}
+
+// getLFSProxySourceURL returns the upstream LFS source URL for a proxied mirror repository.
+// Returns empty string if proxy is not configured or the repo is not a mirror.
+func (h *Handler) getLFSProxySourceURL(repoPath string) string {
+	if h.lfsProxyManager == nil {
+		return ""
+	}
+
+	repo, err := repository.Open(repoPath)
+	if err != nil {
+		return ""
+	}
+
+	isMirror, sourceURL, err := repo.IsMirror()
+	if err != nil || !isMirror || sourceURL == "" {
+		return ""
+	}
+
+	return sourceURL
 }

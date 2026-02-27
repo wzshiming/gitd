@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func (s *Content) Put(oid string, r io.Reader, size int64) error {
 	_ = file.Close()
 
 	if written != size {
-		return errSizeMismatch
+		return fmt.Errorf("%w: expected %d bytes, got %d bytes", errSizeMismatch, size, written)
 	}
 
 	shaStr := hex.EncodeToString(hash.Sum(nil))
