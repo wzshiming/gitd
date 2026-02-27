@@ -28,17 +28,25 @@ type PublicKey = ssh.PublicKey
 type Server struct {
 	repositoriesDir string
 	config          *ssh.ServerConfig
+	proxyManager    *repository.ProxyManager
 }
 
 // Option configures the SSH server.
-type Option func(*ssh.ServerConfig)
+type Option func(*Server)
 
 // WithPublicKeyCallback sets the public key authentication callback for the SSH server.
 // When set, clients must authenticate with a public key accepted by the callback.
 func WithPublicKeyCallback(callback func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error)) Option {
-	return func(config *ssh.ServerConfig) {
-		config.NoClientAuth = false
-		config.PublicKeyCallback = callback
+	return func(s *Server) {
+		s.config.NoClientAuth = false
+		s.config.PublicKeyCallback = callback
+	}
+}
+
+// WithProxyManager sets the proxy manager for the SSH server.
+func WithProxyManager(pm *repository.ProxyManager) Option {
+	return func(s *Server) {
+		s.proxyManager = pm
 	}
 }
 
@@ -47,15 +55,17 @@ func NewServer(repositoriesDir string, hostKey ssh.Signer, opts ...Option) *Serv
 	config := &ssh.ServerConfig{
 		NoClientAuth: true,
 	}
-	for _, opt := range opts {
-		opt(config)
-	}
-	config.AddHostKey(hostKey)
 
-	return &Server{
+	s := &Server{
 		repositoriesDir: repositoriesDir,
 		config:          config,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	config.AddHostKey(hostKey)
+
+	return s
 }
 
 // ParseAuthorizedKeys parses an OpenSSH authorized_keys file and returns
@@ -211,19 +221,22 @@ func (s *Server) executeCommand(channel ssh.Channel, service string, repoPath st
 	defer channel.Close()
 
 	fullPath := repository.ResolvePath(s.repositoriesDir, repoPath)
-	if fullPath == "" || !repository.IsRepository(fullPath) {
+	if fullPath == "" {
+		log.Printf("ssh protocol: repository not found: %s\n", repoPath)
+		sendExitStatus(channel, 1)
+		return
+	}
+
+	ctx := context.Background()
+
+	repo, err := s.openRepo(ctx, fullPath, repoPath, service)
+	if err != nil {
 		log.Printf("ssh protocol: repository not found: %s\n", repoPath)
 		sendExitStatus(channel, 1)
 		return
 	}
 
 	if service == "git-receive-pack" {
-		repo, err := repository.Open(fullPath)
-		if err != nil {
-			log.Printf("ssh protocol: failed to open repository: %v\n", err)
-			sendExitStatus(channel, 1)
-			return
-		}
 		isMirror, _, err := repo.IsMirror()
 		if err != nil {
 			log.Printf("ssh protocol: failed to check repository type: %v\n", err)
@@ -237,7 +250,6 @@ func (s *Server) executeCommand(channel ssh.Channel, service string, repoPath st
 		}
 	}
 
-	ctx := context.Background()
 	cmd := utils.Command(ctx, service, fullPath)
 	cmd.Stdin = channel
 	cmd.Stdout = channel
@@ -250,6 +262,15 @@ func (s *Server) executeCommand(channel ssh.Channel, service string, repoPath st
 	}
 
 	sendExitStatus(channel, 0)
+}
+
+// openRepo opens a repository, optionally creating a mirror from the proxy source.
+func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service string) (*repository.Repository, error) {
+	if s.proxyManager != nil {
+		return s.proxyManager.OpenOrProxy(ctx, repoPath, repoName, service)
+	}
+
+	return repository.Open(repoPath)
 }
 
 // parseCommand parses an SSH exec command like "git-upload-pack '/repo.git'" or

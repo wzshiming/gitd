@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/wzshiming/gitd/internal/handlers"
+	"github.com/wzshiming/gitd/internal/utils"
 	"github.com/wzshiming/gitd/pkg/authenticate"
 	backendgit "github.com/wzshiming/gitd/pkg/backend/git"
 	backendhttp "github.com/wzshiming/gitd/pkg/backend/http"
@@ -18,6 +19,7 @@ import (
 	backendssh "github.com/wzshiming/gitd/pkg/backend/ssh"
 	backendweb "github.com/wzshiming/gitd/pkg/backend/web"
 	"github.com/wzshiming/gitd/pkg/lfs"
+	"github.com/wzshiming/gitd/pkg/repository"
 	"github.com/wzshiming/gitd/pkg/s3fs"
 	"github.com/wzshiming/gitd/pkg/storage"
 	"github.com/wzshiming/gitd/web"
@@ -41,6 +43,8 @@ var (
 	sshAuthorizedKey = ""
 	httpUsername     = ""
 	httpPassword     = ""
+
+	proxyURL = ""
 )
 
 func init() {
@@ -61,6 +65,8 @@ func init() {
 	flag.StringVar(&sshAuthorizedKey, "ssh-authorized-key", "", "Path to SSH authorized_keys file for public key authentication")
 	flag.StringVar(&httpUsername, "http-username", "", "Username for HTTP basic authentication")
 	flag.StringVar(&httpPassword, "http-password", "", "Password for HTTP basic authentication")
+
+	flag.StringVar(&proxyURL, "proxy", "", "Proxy source URL for fetching repositories that don't exist locally (e.g. https://huggingface.co)")
 
 	flag.Parse()
 }
@@ -122,6 +128,17 @@ func main() {
 	}
 
 	storage := storage.NewStorage(storageOpts...)
+	var proxyManager *repository.ProxyManager
+	var lfsProxyManager *lfs.ProxyManager
+	if proxyURL != "" {
+		log.Printf("Proxy mode enabled with source: %s\n", proxyURL)
+		proxyManager = repository.NewProxyManager(proxyURL)
+		lfsProxyManager = lfs.NewProxyManager(
+			utils.HTTPClient,
+			storage.ContentStore().Put,
+			storage.ContentStore().Exists,
+		)
+	}
 	var handler http.Handler
 
 	handler = backendweb.NewHandler(
@@ -130,14 +147,18 @@ func main() {
 
 	handler = huggingface.NewHandler(
 		huggingface.WithStorage(storage), huggingface.WithNext(handler),
+		huggingface.WithProxyManager(proxyManager),
+		huggingface.WithLFSProxyManager(lfsProxyManager),
 	)
 
 	handler = backendlfs.NewHandler(
 		backendlfs.WithStorage(storage), backendlfs.WithNext(handler),
+		backendlfs.WithLFSProxyManager(lfsProxyManager),
 	)
 
 	handler = backendhttp.NewHandler(
 		backendhttp.WithStorage(storage), backendhttp.WithNext(handler),
+		backendhttp.WithProxyManager(proxyManager),
 	)
 
 	if httpUsername != "" {
@@ -149,7 +170,7 @@ func main() {
 
 	if gitAddr != "" {
 		repositoriesDir := filepath.Join(absRootDir, "repositories")
-		gitServer := backendgit.NewServer(repositoriesDir)
+		gitServer := backendgit.NewServer(repositoriesDir, proxyManager)
 		log.Printf("Starting git protocol server on %s\n", gitAddr)
 		go func() {
 			if err := gitServer.ListenAndServe(gitAddr); err != nil {
@@ -186,6 +207,9 @@ func main() {
 			log.Printf("Generated SSH host key and saved to %s\n", hostKeyPath)
 		}
 		var sshOpts []backendssh.Option
+		if proxyManager != nil {
+			sshOpts = append(sshOpts, backendssh.WithProxyManager(proxyManager))
+		}
 		if sshAuthorizedKey != "" {
 			authKeysData, err := os.ReadFile(sshAuthorizedKey)
 			if err != nil {

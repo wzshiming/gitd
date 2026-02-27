@@ -382,7 +382,7 @@ func (h *Handler) handleHFListRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := repository.Open(repoPath)
+	repo, err := h.openRepo(r.Context(), repoPath, repoStorageName(r))
 	if err != nil {
 		if errors.Is(err, repository.ErrRepositoryNotExists) {
 			responseJSON(w, fmt.Errorf("repository %q not found", repoName), http.StatusNotFound)

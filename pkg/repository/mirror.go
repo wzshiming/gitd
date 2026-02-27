@@ -29,7 +29,7 @@ func InitMrror(ctx context.Context, repoPath string, sourceURL string) (*Reposit
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/x-git-upload-pack-advertisement")
-	req.Header.Set("User-Agent", "go-git/5.x")
+	req.Header.Set("User-Agent", capability.DefaultAgent())
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
