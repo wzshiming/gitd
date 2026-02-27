@@ -104,7 +104,7 @@ func CompressHandlerLevel(h http.Handler, level int) http.Handler {
 
 		// detect what encoding to use
 		var encoding string
-		for _, curEnc := range strings.Split(r.Header.Get(acceptEncoding), ",") {
+		for curEnc := range strings.SplitSeq(r.Header.Get(acceptEncoding), ",") {
 			curEnc = strings.TrimSpace(curEnc)
 			if curEnc == gzipEncoding || curEnc == flateEncoding {
 				encoding = curEnc
