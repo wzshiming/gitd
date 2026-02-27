@@ -22,7 +22,9 @@ func (h *fixHFMirrorRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	// To workaround this issue, we directly send requests to hf.co when the host is cas-bridge.xethub.hf-mirror.org.
 	// This is a hack and should be removed once the issue in hf-mirror.org is fixed.
 	if req.URL.Host == "cas-bridge.xethub.hf-mirror.org" {
-		req.URL.Host = "cas-bridge.xethub.hf.co"
+		req.Host = "cas-bridge.xethub.hf.co"
+		req.URL.Host = req.Host
+
 	}
 
 	resp, err := h.base.RoundTrip(req)
