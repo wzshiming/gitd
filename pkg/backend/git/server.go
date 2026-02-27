@@ -16,12 +16,14 @@ import (
 // Server implements the git protocol (git://) server.
 type Server struct {
 	repositoriesDir string
+	proxyManager    *repository.ProxyManager
 }
 
 // NewServer creates a new git protocol server.
-func NewServer(repositoriesDir string) *Server {
+func NewServer(repositoriesDir string, proxyManager *repository.ProxyManager) *Server {
 	return &Server{
 		repositoriesDir: repositoriesDir,
+		proxyManager:    proxyManager,
 	}
 }
 
@@ -62,17 +64,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	fullPath := repository.ResolvePath(s.repositoriesDir, repoPath)
-	if fullPath == "" || !repository.IsRepository(fullPath) {
+	if fullPath == "" {
+		log.Printf("git protocol: repository not found: %s\n", repoPath)
+		return
+	}
+
+	ctx := context.Background()
+
+	repo, err := s.openRepo(ctx, fullPath, repoPath, service)
+	if err != nil {
 		log.Printf("git protocol: repository not found: %s\n", repoPath)
 		return
 	}
 
 	if service == "git-receive-pack" {
-		repo, err := repository.Open(fullPath)
-		if err != nil {
-			log.Printf("git protocol: failed to open repository: %v\n", err)
-			return
-		}
 		isMirror, _, err := repo.IsMirror()
 		if err != nil {
 			log.Printf("git protocol: failed to check repository type: %v\n", err)
@@ -84,7 +89,6 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 	}
 
-	ctx := context.Background()
 	cmd := utils.Command(ctx, service, fullPath)
 	cmd.Stdin = conn
 	cmd.Stdout = conn
@@ -92,6 +96,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 		log.Printf("git protocol: command %s failed: %v\n", service, err)
 		return
 	}
+}
+
+// openRepo opens a repository, optionally creating a mirror from the proxy source.
+func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service string) (*repository.Repository, error) {
+	if s.proxyManager != nil {
+		return s.proxyManager.OpenOrProxy(ctx, repoPath, repoName, service)
+	}
+
+	return repository.Open(repoPath)
 }
 
 // readRequest reads the initial git protocol request from the connection.

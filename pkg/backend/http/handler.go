@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/wzshiming/gitd/pkg/repository"
 	"github.com/wzshiming/gitd/pkg/storage"
 )
 
@@ -16,6 +17,8 @@ type Handler struct {
 	root *mux.Router
 
 	next http.Handler
+
+	proxyManager *repository.ProxyManager
 }
 
 type Option func(*Handler)
@@ -30,6 +33,13 @@ func WithStorage(storage *storage.Storage) Option {
 func WithNext(next http.Handler) Option {
 	return func(h *Handler) {
 		h.next = next
+	}
+}
+
+// WithProxyManager sets the repository proxy manager for transparent upstream repository fetching.
+func WithProxyManager(pm *repository.ProxyManager) Option {
+	return func(h *Handler) {
+		h.proxyManager = pm
 	}
 }
 
