@@ -37,9 +37,9 @@ type HFSibling struct {
 	RFilename string `json:"rfilename"`
 }
 
-// handleHFInfo handles the /api/models/{repo_id} endpoint
+// handleInfo handles the /api/models/{repo_id} endpoint
 // This is used by huggingface_hub to get model metadata
-func (h *Handler) handleHFInfo(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 
@@ -62,7 +62,7 @@ func (h *Handler) handleHFInfo(w http.ResponseWriter, r *http.Request) {
 	defaultBranch := repo.DefaultBranch()
 
 	// Get list of files in the repository (recursive to include files in subdirectories)
-	hfEntries, err := repo.HFTree(defaultBranch, "", &repository.HFTreeOptions{Recursive: true})
+	hfEntries, err := repo.Tree(defaultBranch, "", &repository.TreeOptions{Recursive: true})
 	if err != nil {
 		// Return empty siblings if we can't get the tree
 		hfEntries = nil
@@ -70,7 +70,7 @@ func (h *Handler) handleHFInfo(w http.ResponseWriter, r *http.Request) {
 
 	var siblings []HFSibling
 	for _, entry := range hfEntries {
-		if entry.Type == repository.HFEntryTypeFile {
+		if entry.Type == repository.EntryTypeFile {
 			siblings = append(siblings, HFSibling{
 				RFilename: entry.Path,
 			})
@@ -101,7 +101,7 @@ func (h *Handler) handleHFInfo(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, modelInfo, http.StatusOK)
 }
 
-func (h *Handler) handleHFTree(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleTree(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	repoName := vars["repo"]
@@ -133,7 +133,7 @@ func (h *Handler) handleHFTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := repo.HFTree(ref, path, &repository.HFTreeOptions{
+	entries, err := repo.Tree(ref, path, &repository.TreeOptions{
 		Recursive: recursive,
 		Expand:    expand,
 	})
@@ -145,9 +145,9 @@ func (h *Handler) handleHFTree(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, entries, http.StatusOK)
 }
 
-// handleHFInfoRevision handles the /api/models/{repo_id}/revision/{revision} endpoint
+// handleInfoRevision handles the /api/models/{repo_id}/revision/{revision} endpoint
 // This is used by huggingface_hub for snapshot_download to get model info at specific revision
-func (h *Handler) handleHFInfoRevision(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleInfoRevision(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	repoName := vars["repo"]
@@ -170,13 +170,13 @@ func (h *Handler) handleHFInfoRevision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get list of files in the repository at the specified revision (recursive to include files in subdirectories)
-	hfEntries, err := repo.HFTree(ref, "", &repository.HFTreeOptions{Recursive: true})
+	hfEntries, err := repo.Tree(ref, "", &repository.TreeOptions{Recursive: true})
 	if err != nil {
 		//TODO(@wzshiming): In hf binarys, it only use main as default branch,
 		// if the ref is main but not exist, we can try to fallback to the real default branch to be compatible with hf client.
 		defaultBranch := repo.DefaultBranch()
 		if ref == "main" && defaultBranch != ref {
-			hfEntries, err = repo.HFTree(defaultBranch, "", &repository.HFTreeOptions{Recursive: true})
+			hfEntries, err = repo.Tree(defaultBranch, "", &repository.TreeOptions{Recursive: true})
 			if err != nil {
 				hfEntries = nil
 			} else {
@@ -187,7 +187,7 @@ func (h *Handler) handleHFInfoRevision(w http.ResponseWriter, r *http.Request) {
 
 	var siblings []HFSibling
 	for _, entry := range hfEntries {
-		if entry.Type == repository.HFEntryTypeFile {
+		if entry.Type == repository.EntryTypeFile {
 			siblings = append(siblings, HFSibling{
 				RFilename: entry.Path,
 			})
@@ -218,9 +218,9 @@ func (h *Handler) handleHFInfoRevision(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, modelInfo, http.StatusOK)
 }
 
-// handleHFResolve handles the /{repo_id}/resolve/{revision}/{path} endpoint
+// handleResolve handles the /{repo_id}/resolve/{revision}/{path} endpoint
 // This is used by huggingface_hub to download files
-func (h *Handler) handleHFResolve(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	repoName := vars["repo"]

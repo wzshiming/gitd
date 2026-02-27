@@ -57,8 +57,8 @@ type HFGitRefs struct {
 	Tags     []HFGitRefInfo `json:"tags"`
 }
 
-// handleHFDeleteRepo handles DELETE /api/repos/delete
-func (h *Handler) handleHFDeleteRepo(w http.ResponseWriter, r *http.Request) {
+// handleDeleteRepo handles DELETE /api/repos/delete
+func (h *Handler) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 	var req HFDeleteRepoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
@@ -100,8 +100,8 @@ func (h *Handler) handleHFDeleteRepo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFMoveRepo handles POST /api/repos/move
-func (h *Handler) handleHFMoveRepo(w http.ResponseWriter, r *http.Request) {
+// handleMoveRepo handles POST /api/repos/move
+func (h *Handler) handleMoveRepo(w http.ResponseWriter, r *http.Request) {
 	var req HFMoveRepoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
@@ -155,8 +155,8 @@ func (h *Handler) handleHFMoveRepo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFRepoSettings handles PUT /api/{repoType}s/{repo}/settings
-func (h *Handler) handleHFRepoSettings(w http.ResponseWriter, r *http.Request) {
+// handleRepoSettings handles PUT /api/{repoType}s/{repo}/settings
+func (h *Handler) handleRepoSettings(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 
@@ -181,8 +181,8 @@ func (h *Handler) handleHFRepoSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFCreateBranch handles POST /api/{repoType}s/{repo}/branch/{branch}
-func (h *Handler) handleHFCreateBranch(w http.ResponseWriter, r *http.Request) {
+// handleCreateBranch handles POST /api/{repoType}s/{repo}/branch/{branch}
+func (h *Handler) handleCreateBranch(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 	branch := vars["branch"]
@@ -231,8 +231,8 @@ func (h *Handler) handleHFCreateBranch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFDeleteBranch handles DELETE /api/{repoType}s/{repo}/branch/{branch}
-func (h *Handler) handleHFDeleteBranch(w http.ResponseWriter, r *http.Request) {
+// handleDeleteBranch handles DELETE /api/{repoType}s/{repo}/branch/{branch}
+func (h *Handler) handleDeleteBranch(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 	branch := vars["branch"]
@@ -277,8 +277,8 @@ func (h *Handler) handleHFDeleteBranch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFCreateTag handles POST /api/{repoType}s/{repo}/tag/{tag}
-func (h *Handler) handleHFCreateTag(w http.ResponseWriter, r *http.Request) {
+// handleCreateTag handles POST /api/{repoType}s/{repo}/tag/{tag}
+func (h *Handler) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 	revision := vars["tag"] // URL variable is the revision to tag from
@@ -331,8 +331,8 @@ func (h *Handler) handleHFCreateTag(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFDeleteTag handles DELETE /api/{repoType}s/{repo}/tag/{tag}
-func (h *Handler) handleHFDeleteTag(w http.ResponseWriter, r *http.Request) {
+// handleDeleteTag handles DELETE /api/{repoType}s/{repo}/tag/{tag}
+func (h *Handler) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 	tag := vars["tag"]
@@ -371,8 +371,8 @@ func (h *Handler) handleHFDeleteTag(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleHFListRefs handles GET /api/{repoType}s/{repo}/refs
-func (h *Handler) handleHFListRefs(w http.ResponseWriter, r *http.Request) {
+// handleListRefs handles GET /api/{repoType}s/{repo}/refs
+func (h *Handler) handleListRefs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 
