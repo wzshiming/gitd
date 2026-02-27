@@ -97,32 +97,32 @@ func repoStorageName(r *http.Request) string {
 // with HF_ENDPOINT pointing to this server.
 func (h *Handler) registryHuggingFace(r *mux.Router) {
 	// Repository management endpoints - used by huggingface_hub for repo CRUD
-	r.HandleFunc("/api/repos/create", h.handleHFCreateRepo).Methods(http.MethodPost)
-	r.HandleFunc("/api/repos/delete", h.handleHFDeleteRepo).Methods(http.MethodDelete)
-	r.HandleFunc("/api/repos/move", h.handleHFMoveRepo).Methods(http.MethodPost)
+	r.HandleFunc("/api/repos/create", h.handleCreateRepo).Methods(http.MethodPost)
+	r.HandleFunc("/api/repos/delete", h.handleDeleteRepo).Methods(http.MethodDelete)
+	r.HandleFunc("/api/repos/move", h.handleMoveRepo).Methods(http.MethodPost)
 
 	// YAML validation endpoint - used by huggingface_hub to validate README YAML front matter
-	r.HandleFunc("/api/validate-yaml", h.handleHFValidateYAML).Methods(http.MethodPost)
+	r.HandleFunc("/api/validate-yaml", h.handleValidateYAML).Methods(http.MethodPost)
 
 	// Repository settings, branch, tag, and refs endpoints
 	// These must be registered before the generic model info catch-all route.
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/settings", h.handleHFRepoSettings).Methods(http.MethodPut)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleHFCreateBranch).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleHFDeleteBranch).Methods(http.MethodDelete)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleHFCreateTag).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleHFDeleteTag).Methods(http.MethodDelete)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/refs", h.handleHFListRefs).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/settings", h.handleRepoSettings).Methods(http.MethodPut)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleCreateBranch).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/branch/{branch:.*}", h.handleDeleteBranch).Methods(http.MethodDelete)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleCreateTag).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tag/{tag:.*}", h.handleDeleteTag).Methods(http.MethodDelete)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/refs", h.handleListRefs).Methods(http.MethodGet)
 
 	// API endpoints for all repo types (models, datasets, spaces)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/preupload/{revision:.*}", h.handleHFPreupload).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/commit/{revision:.*}", h.handleHFCommit).Methods(http.MethodPost)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/revision/{revision:.*}", h.handleHFInfoRevision).Methods(http.MethodGet)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tree/{refpath:.*}", h.handleHFTree).Methods(http.MethodGet)
-	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}", h.handleHFInfo).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/preupload/{revision:.*}", h.handlePreupload).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/commit/{revision:.*}", h.handleCommit).Methods(http.MethodPost)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/revision/{revision:.*}", h.handleInfoRevision).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}/tree/{refpath:.*}", h.handleTree).Methods(http.MethodGet)
+	r.HandleFunc("/api/{repoType:models|datasets|spaces}/{repo:.+}", h.handleInfo).Methods(http.MethodGet)
 
 	// File download endpoints - datasets and spaces use a type prefix, models use the root
-	r.HandleFunc("/{repoType:datasets|spaces}/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc("/{repo:.+}/resolve/{refpath:.*}", h.handleHFResolve).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc("/{repoType:datasets|spaces}/{repo:.+}/resolve/{refpath:.*}", h.handleResolve).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc("/{repo:.+}/resolve/{refpath:.*}", h.handleResolve).Methods(http.MethodGet, http.MethodHead)
 }
 
 // openRepo opens a repository, optionally creating a mirror from the proxy source

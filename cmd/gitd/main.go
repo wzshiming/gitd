@@ -17,12 +17,10 @@ import (
 	"github.com/wzshiming/gitd/pkg/backend/huggingface"
 	backendlfs "github.com/wzshiming/gitd/pkg/backend/lfs"
 	backendssh "github.com/wzshiming/gitd/pkg/backend/ssh"
-	backendweb "github.com/wzshiming/gitd/pkg/backend/web"
 	"github.com/wzshiming/gitd/pkg/lfs"
 	"github.com/wzshiming/gitd/pkg/repository"
 	"github.com/wzshiming/gitd/pkg/s3fs"
 	"github.com/wzshiming/gitd/pkg/storage"
-	"github.com/wzshiming/gitd/web"
 )
 
 var (
@@ -141,23 +139,22 @@ func main() {
 	}
 	var handler http.Handler
 
-	handler = backendweb.NewHandler(
-		backendweb.WithStorage(storage), backendweb.WithNext(web.Web),
-	)
-
 	handler = huggingface.NewHandler(
-		huggingface.WithStorage(storage), huggingface.WithNext(handler),
+		huggingface.WithStorage(storage),
+		huggingface.WithNext(handler),
 		huggingface.WithProxyManager(proxyManager),
 		huggingface.WithLFSProxyManager(lfsProxyManager),
 	)
 
 	handler = backendlfs.NewHandler(
-		backendlfs.WithStorage(storage), backendlfs.WithNext(handler),
+		backendlfs.WithStorage(storage),
+		backendlfs.WithNext(handler),
 		backendlfs.WithLFSProxyManager(lfsProxyManager),
 	)
 
 	handler = backendhttp.NewHandler(
-		backendhttp.WithStorage(storage), backendhttp.WithNext(handler),
+		backendhttp.WithStorage(storage),
+		backendhttp.WithNext(handler),
 		backendhttp.WithProxyManager(proxyManager),
 	)
 

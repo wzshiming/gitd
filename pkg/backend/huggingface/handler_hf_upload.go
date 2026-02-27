@@ -110,9 +110,9 @@ func requestOrigin(r *http.Request) string {
 	return fmt.Sprintf("%s://%s", scheme, r.Host)
 }
 
-// handleHFValidateYAML handles POST /api/validate-yaml
+// handleValidateYAML handles POST /api/validate-yaml
 // This endpoint is called by huggingface_hub to validate YAML front matter in files like README.md.
-func (h *Handler) handleHFValidateYAML(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleValidateYAML(w http.ResponseWriter, r *http.Request) {
 	// Return a successful validation response
 	responseJSON(w, struct {
 		Errors   []string `json:"errors"`
@@ -149,8 +149,8 @@ func repoTypeURLPrefix(repoType string) string {
 	}
 }
 
-// handleHFCreateRepo handles POST /api/repos/create
-func (h *Handler) handleHFCreateRepo(w http.ResponseWriter, r *http.Request) {
+// handleCreateRepo handles POST /api/repos/create
+func (h *Handler) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	var req HFCreateRepoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
@@ -207,8 +207,8 @@ func (h *Handler) handleHFCreateRepo(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, resp, http.StatusOK)
 }
 
-// handleHFPreupload handles POST /api/models/{repo}/preupload/{revision}
-func (h *Handler) handleHFPreupload(w http.ResponseWriter, r *http.Request) {
+// handlePreupload handles POST /api/models/{repo}/preupload/{revision}
+func (h *Handler) handlePreupload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	revision := vars["revision"]
 
@@ -259,8 +259,8 @@ func (h *Handler) handleHFPreupload(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, resp, http.StatusOK)
 }
 
-// handleHFCommit handles POST /api/models/{repo}/commit/{revision}
-func (h *Handler) handleHFCommit(w http.ResponseWriter, r *http.Request) {
+// handleCommit handles POST /api/models/{repo}/commit/{revision}
+func (h *Handler) handleCommit(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoName := vars["repo"]
 	revision := vars["revision"]
