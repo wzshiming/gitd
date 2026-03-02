@@ -40,7 +40,7 @@ func NewStorage(opts ...Option) *Storage {
 		opt(h)
 	}
 
-	h.locksStore = lfs.NewLock(filepath.Join(h.rootDir, "lfs", "locks.db"))
+	h.locksStore = lfs.NewLock()
 	h.contentStore = lfs.NewContent(filepath.Join(h.rootDir, "lfs"))
 
 	h.repositoriesDir = filepath.Join(h.rootDir, "repositories")
