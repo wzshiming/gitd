@@ -20,7 +20,7 @@ Compared against the [HuggingFace OpenAPI v3](https://huggingface.co/.well-known
 | ✅ | `GET` | `/api/models/{namespace}/{repo}/refs` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/GET/api/models/{namespace}/{repo}/refs) | List references |
 | ❌ | `GET` | `/api/models/{namespace}/{repo}/scan` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/GET/api/models/{namespace}/{repo}/scan) | Get security status |
 | ✅ | `PUT` | `/api/models/{namespace}/{repo}/settings` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/PUT/api/models/{namespace}/{repo}/settings) | Update repo settings |
-| ❌ | `POST` | `/api/models/{namespace}/{repo}/super-squash/{rev}` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/POST/api/models/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
+| ✅ | `POST` | `/api/models/{namespace}/{repo}/super-squash/{rev}` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/POST/api/models/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
 | ✅ | `POST` | `/api/models/{namespace}/{repo}/tag/{rev}` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/POST/api/models/{namespace}/{repo}/tag/{rev}) | Create tag |
 | ✅ | `DELETE` | `/api/models/{namespace}/{repo}/tag/{rev}` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/DELETE/api/models/{namespace}/{repo}/tag/{rev}) | Delete a tag |
 | ✅ | `GET` | `/api/models/{namespace}/{repo}/tree/{rev}/{path}` | [models](https://huggingface.co/spaces/huggingface/openapi#tag/models/GET/api/models/{namespace}/{repo}/tree/{rev}/{path}) | List folder content |
@@ -55,7 +55,7 @@ Compared against the [HuggingFace OpenAPI v3](https://huggingface.co/.well-known
 | ✅ | `GET` | `/api/datasets/{namespace}/{repo}/refs` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/GET/api/datasets/{namespace}/{repo}/refs) | List references |
 | ❌ | `GET` | `/api/datasets/{namespace}/{repo}/scan` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/GET/api/datasets/{namespace}/{repo}/scan) | Get security status |
 | ✅ | `PUT` | `/api/datasets/{namespace}/{repo}/settings` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/PUT/api/datasets/{namespace}/{repo}/settings) | Update repo settings |
-| ❌ | `POST` | `/api/datasets/{namespace}/{repo}/super-squash/{rev}` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/POST/api/datasets/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
+| ✅ | `POST` | `/api/datasets/{namespace}/{repo}/super-squash/{rev}` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/POST/api/datasets/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
 | ✅ | `POST` | `/api/datasets/{namespace}/{repo}/tag/{rev}` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/POST/api/datasets/{namespace}/{repo}/tag/{rev}) | Create tag |
 | ✅ | `DELETE` | `/api/datasets/{namespace}/{repo}/tag/{rev}` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/DELETE/api/datasets/{namespace}/{repo}/tag/{rev}) | Delete a tag |
 | ✅ | `GET` | `/api/datasets/{namespace}/{repo}/tree/{rev}/{path}` | [datasets](https://huggingface.co/spaces/huggingface/openapi#tag/datasets/GET/api/datasets/{namespace}/{repo}/tree/{rev}/{path}) | List folder content |
@@ -92,7 +92,7 @@ Compared against the [HuggingFace OpenAPI v3](https://huggingface.co/.well-known
 | ❌ | `POST` | `/api/spaces/{namespace}/{repo}/secrets` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/POST/api/spaces/{namespace}/{repo}/secrets) | Upsert secret |
 | ❌ | `DELETE` | `/api/spaces/{namespace}/{repo}/secrets` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/DELETE/api/spaces/{namespace}/{repo}/secrets) | Delete secret |
 | ✅ | `PUT` | `/api/spaces/{namespace}/{repo}/settings` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/PUT/api/spaces/{namespace}/{repo}/settings) | Update repo settings |
-| ❌ | `POST` | `/api/spaces/{namespace}/{repo}/super-squash/{rev}` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/POST/api/spaces/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
+| ✅ | `POST` | `/api/spaces/{namespace}/{repo}/super-squash/{rev}` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/POST/api/spaces/{namespace}/{repo}/super-squash/{rev}) | Squash ref |
 | ✅ | `POST` | `/api/spaces/{namespace}/{repo}/tag/{rev}` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/POST/api/spaces/{namespace}/{repo}/tag/{rev}) | Create tag |
 | ✅ | `DELETE` | `/api/spaces/{namespace}/{repo}/tag/{rev}` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/DELETE/api/spaces/{namespace}/{repo}/tag/{rev}) | Delete a tag |
 | ✅ | `GET` | `/api/spaces/{namespace}/{repo}/tree/{rev}/{path}` | [spaces](https://huggingface.co/spaces/huggingface/openapi#tag/spaces/GET/api/spaces/{namespace}/{repo}/tree/{rev}/{path}) | List folder content |

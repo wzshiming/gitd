@@ -586,3 +586,53 @@ func (h *Handler) handleListRefs(w http.ResponseWriter, r *http.Request) {
 	}
 	responseJSON(w, refs, http.StatusOK)
 }
+
+// HFSuperSquashRequest represents the super-squash request body.
+type HFSuperSquashRequest struct {
+	Message string `json:"message,omitempty"`
+}
+
+// handleSuperSquash handles POST /api/{repoType}/{repo}/super-squash/{rev}
+// It squashes all commits in the current ref into a single commit with the given message.
+// The action is irreversible.
+func (h *Handler) handleSuperSquash(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	ri := repoInfo(r)
+	rev := vars["rev"]
+
+	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), ri.RepoPath)
+	if repoPath == "" {
+		responseJSON(w, fmt.Errorf("repository %q not found", ri.RepoPath), http.StatusNotFound)
+		return
+	}
+
+	repo, err := repository.Open(repoPath)
+	if err != nil {
+		if errors.Is(err, repository.ErrRepositoryNotExists) {
+			responseJSON(w, fmt.Errorf("repository %q not found", ri.RepoPath), http.StatusNotFound)
+			return
+		}
+		responseJSON(w, fmt.Errorf("failed to open repository %q: %v", ri.RepoPath, err), http.StatusInternalServerError)
+		return
+	}
+
+	var req HFSuperSquashRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			responseJSON(w, fmt.Errorf("invalid request body: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	message := req.Message
+	if message == "" {
+		message = "Super-squash branch '" + rev + "' using huggingface_hub"
+	}
+
+	if _, err := repo.SuperSquash(r.Context(), rev, message, "HuggingFace", "hf@users.noreply.huggingface.co"); err != nil {
+		responseJSON(w, fmt.Errorf("failed to squash repository %q ref %q: %v", ri.RepoPath, rev, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
