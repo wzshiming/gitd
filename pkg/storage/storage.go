@@ -10,9 +10,8 @@ type Storage struct {
 	rootDir         string
 	repositoriesDir string
 
-	contentStore *lfs.Content
-	s3Store      *lfs.S3
-	locksStore   *lfs.LockDB
+	lfsStore   lfs.Store
+	locksStore *lfs.LockDB
 }
 
 type Option func(*Storage)
@@ -23,10 +22,10 @@ func WithRootDir(rootDir string) Option {
 	}
 }
 
-// WithLFSS3 configures the LFS S3 storage backend.
-func WithLFSS3(s3Store *lfs.S3) Option {
+// WithLFSStore configures the LFS storage backend.
+func WithLFSStore(store lfs.Store) Option {
 	return func(h *Storage) {
-		h.s3Store = s3Store
+		h.lfsStore = store
 	}
 }
 
@@ -41,7 +40,9 @@ func NewStorage(opts ...Option) *Storage {
 	}
 
 	h.locksStore = lfs.NewLock()
-	h.contentStore = lfs.NewContent(filepath.Join(h.rootDir, "lfs"))
+	if h.lfsStore == nil {
+		h.lfsStore = lfs.NewContent(filepath.Join(h.rootDir, "lfs"))
+	}
 
 	h.repositoriesDir = filepath.Join(h.rootDir, "repositories")
 
@@ -56,12 +57,8 @@ func (s *Storage) RepositoriesDir() string {
 	return s.repositoriesDir
 }
 
-func (s *Storage) S3Store() *lfs.S3 {
-	return s.s3Store
-}
-
-func (s *Storage) ContentStore() *lfs.Content {
-	return s.contentStore
+func (s *Storage) LFSStore() lfs.Store {
+	return s.lfsStore
 }
 
 func (s *Storage) LocksStore() *lfs.LockDB {

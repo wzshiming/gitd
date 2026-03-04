@@ -118,7 +118,7 @@ func main() {
 			s3SignEndpoint,
 		)
 		storageOpts = append(storageOpts,
-			storage.WithLFSS3(
+			storage.WithLFSStore(
 				lfss3,
 			),
 		)
@@ -133,8 +133,7 @@ func main() {
 		proxyManager = repository.NewProxyManager(proxyURL)
 		lfsProxyManager = lfs.NewProxyManager(
 			utils.HTTPClient,
-			storage.ContentStore().Put,
-			storage.ContentStore().Exists,
+			storage.LFSStore(),
 		)
 	}
 	var handler http.Handler
