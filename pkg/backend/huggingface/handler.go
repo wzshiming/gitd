@@ -72,6 +72,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.root.ServeHTTP(w, r)
 }
 
+// Router returns the underlying mux.Router for route inspection.
+func (h *Handler) Router() *mux.Router {
+	return h.root
+}
+
 func (h *Handler) register() {
 	// HuggingFace-compatible API endpoints
 	h.registryHuggingFace(h.root)
