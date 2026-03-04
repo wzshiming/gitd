@@ -603,3 +603,98 @@ func TestHuggingFaceDatasetBranchAndTag(t *testing.T) {
 		t.Error("Expected to find tag 'v1.0' on dataset")
 	}
 }
+
+func TestHuggingFaceSuperSquash(t *testing.T) {
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	// Create repo with an initial commit
+	firstSHA := createRepoAndCommit(t, endpoint, "model", "test-user", "squash-model")
+
+	// Make a second commit
+	ndjson := "{\"key\":\"header\",\"value\":{\"summary\":\"Second commit\"}}\n" +
+		"{\"key\":\"file\",\"value\":{\"content\":\"v2\\n\",\"path\":\"file.txt\",\"encoding\":\"utf-8\"}}\n"
+	resp, err := http.Post(endpoint+"/api/models/test-user/squash-model/commit/main", "application/x-ndjson", strings.NewReader(ndjson))
+	if err != nil {
+		t.Fatalf("Failed to make second commit: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", resp.StatusCode)
+	}
+
+	// Super-squash the branch
+	squashBody := `{"message":"Squashed history"}`
+	resp, err = http.Post(endpoint+"/api/models/test-user/squash-model/super-squash/main", "application/json", strings.NewReader(squashBody))
+	if err != nil {
+		t.Fatalf("Failed to super-squash: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", resp.StatusCode)
+	}
+
+	// Verify we now have a single commit (the squashed one)
+	resp, err = http.Get(endpoint + "/api/models/test-user/squash-model")
+	if err != nil {
+		t.Fatalf("Failed to get repo info: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", resp.StatusCode)
+	}
+
+	var info backendhuggingface.HFRepoInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		t.Fatalf("Failed to decode repo info: %v", err)
+	}
+
+	// The new SHA should differ from the original first commit SHA
+	if info.SHA == "" {
+		t.Error("Expected non-empty SHA after super-squash")
+	}
+	if info.SHA == firstSHA {
+		t.Error("Expected SHA to differ from first commit after super-squash")
+	}
+
+	// Files should still be present
+	resp2, err := http.Get(endpoint + "/test-user/squash-model/resolve/main/file.txt")
+	if err != nil {
+		t.Fatalf("Failed to resolve file: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("Expected file to exist after squash, got %d", resp2.StatusCode)
+	}
+}
+
+func TestHuggingFaceSuperSquashDefaultMessage(t *testing.T) {
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	createRepoAndCommit(t, endpoint, "model", "test-user", "squash-default-model")
+
+	// Super-squash without a message (use default)
+	resp, err := http.Post(endpoint+"/api/models/test-user/squash-default-model/super-squash/main", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("Failed to super-squash: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestHuggingFaceSuperSquashNotFound(t *testing.T) {
+	server, _ := setupTestServer(t)
+	endpoint := server.URL
+
+	resp, err := http.Post(endpoint+"/api/models/test-user/nonexistent-model/super-squash/main", "application/json", strings.NewReader(`{"message":"test"}`))
+	if err != nil {
+		t.Fatalf("Failed to call super-squash: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("Expected 404 for nonexistent repo, got %d", resp.StatusCode)
+	}
+}
