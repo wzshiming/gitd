@@ -54,7 +54,7 @@ func TestLFSProxyMode(t *testing.T) {
 	lfsOid := fmt.Sprintf("%x", lfsHash)
 	lfsSize := int64(len(lfsContent))
 
-	err = upstreamStorage.ContentStore().Put(lfsOid, bytes.NewReader(lfsContent), lfsSize)
+	err = upstreamStorage.LFSStore().Put(lfsOid, bytes.NewReader(lfsContent), lfsSize)
 	if err != nil {
 		t.Fatalf("Failed to put LFS object: %v", err)
 	}
@@ -99,8 +99,7 @@ func TestLFSProxyMode(t *testing.T) {
 	// Set up proxy LFS handler
 	lfsProxyManager := lfs.NewProxyManager(
 		utils.HTTPClient,
-		proxyStorage.ContentStore().Put,
-		proxyStorage.ContentStore().Exists,
+		proxyStorage.LFSStore(),
 	)
 	proxyHandler := backendlfs.NewHandler(
 		backendlfs.WithStorage(proxyStorage),
@@ -111,7 +110,7 @@ func TestLFSProxyMode(t *testing.T) {
 
 	t.Run("BatchDownloadProxiesFromUpstream", func(t *testing.T) {
 		// Verify the object doesn't exist locally on proxy
-		if proxyStorage.ContentStore().Exists(lfsOid) {
+		if proxyStorage.LFSStore().Exists(lfsOid) {
 			t.Fatal("LFS object should not exist on proxy initially")
 		}
 
@@ -176,7 +175,7 @@ func TestLFSProxyMode(t *testing.T) {
 		// Verify the object is eventually cached locally on the proxy (async fetch)
 		cached := false
 		for range 50 {
-			if proxyStorage.ContentStore().Exists(lfsOid) {
+			if proxyStorage.LFSStore().Exists(lfsOid) {
 				cached = true
 				break
 			}

@@ -25,17 +25,15 @@ func (f *ProxyFlight) NewReadSeeker() io.ReadSeekCloser {
 type ProxyManager struct {
 	httpClient *http.Client
 	flights    sync.Map
-	putFn      func(oid string, r io.Reader, size int64) error
-	existsFn   func(oid string) bool
+	store      Store
 }
 
 // NewProxyManager creates a new ProxyManager.
-// putFn is used to store fetched objects. existsFn checks if an object already exists locally.
-func NewProxyManager(httpClient *http.Client, putFn func(oid string, r io.Reader, size int64) error, existsFn func(oid string) bool) *ProxyManager {
+// store is used to store fetched objects and check if objects exist locally.
+func NewProxyManager(httpClient *http.Client, store Store) *ProxyManager {
 	return &ProxyManager{
 		httpClient: httpClient,
-		putFn:      putFn,
-		existsFn:   existsFn,
+		store:      store,
 	}
 }
 
@@ -67,7 +65,7 @@ func (m *ProxyManager) FetchFromProxy(ctx context.Context, sourceURL string, obj
 		if ok {
 			continue
 		}
-		if m.existsFn(obj.Oid) {
+		if m.store.Exists(obj.Oid) {
 			continue
 		}
 
@@ -135,7 +133,7 @@ func (m *ProxyManager) fetchSingleObject(ctx context.Context, oid string, size i
 
 	go func() {
 		defer reader.Close()
-		if err := m.putFn(oid, reader, size); err != nil {
+		if err := m.store.Put(oid, reader, size); err != nil {
 			log.Printf("LFS proxy: failed to store object %s: %v", oid, err)
 			return
 		}
