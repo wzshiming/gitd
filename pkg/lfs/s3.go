@@ -180,6 +180,12 @@ func (f *s3FileInfo) Sys() any {
 	return nil
 }
 
+// Exists returns true if the object exists in S3.
+func (s *S3) Exists(oid string) bool {
+	_, err := s.Info(oid)
+	return err == nil
+}
+
 func isNotFoundError(err error) bool {
 	if aerr, ok := err.(s3.RequestFailure); ok {
 		if aerr.StatusCode() == 404 {

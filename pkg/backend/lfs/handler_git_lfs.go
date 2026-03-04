@@ -39,15 +39,7 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 
 	// Create a response object
 	for _, object := range bv.Objects {
-		var exists bool
-		if h.storage.S3Store() != nil {
-			fi, _ := h.storage.S3Store().Info(object.Oid)
-			exists = fi != nil
-		} else {
-			exists = h.storage.ContentStore().Exists(object.Oid)
-		}
-
-		if exists { // Object is found and exists
+		if h.storage.LFSStore().Exists(object.Oid) {
 			responseObjects = append(responseObjects, lfsRepresent(object, true, false))
 			continue
 		}
@@ -130,16 +122,16 @@ func (h *Handler) getProxySourceURL(bv *lfsBatchVars) string {
 // handlePutContent receives data from the client and puts it into the content store
 func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
-	if h.storage.S3Store() != nil {
-		url, err := h.storage.S3Store().SignPut(rv.Oid)
+	if signer, ok := h.storage.LFSStore().(lfs.SignPutter); ok {
+		url, err := signer.SignPut(rv.Oid)
 		if err != nil {
-			responseJSON(w, fmt.Sprintf("failed to sign S3 URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
+			responseJSON(w, fmt.Sprintf("failed to sign URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
 			return
 		}
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
-	if err := h.storage.ContentStore().Put(rv.Oid, r.Body, r.ContentLength); err != nil {
+	if err := h.storage.LFSStore().Put(rv.Oid, r.Body, r.ContentLength); err != nil {
 		responseJSON(w, fmt.Sprintf("failed to put LFS object %s: %v", rv.Oid, err), http.StatusInternalServerError)
 		return
 	}
@@ -148,61 +140,52 @@ func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 // handleGetContent gets the content from the content store
 func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
-	if h.lfsProxyManager != nil {
-		pf := h.lfsProxyManager.GetFlight(rv.Oid)
-		if pf != nil {
-			rs := pf.NewReadSeeker()
-			defer rs.Close()
-			http.ServeContent(w, r, rv.Oid, time.Now(), rs)
-			return
+	if !h.storage.LFSStore().Exists(rv.Oid) {
+		if h.lfsProxyManager != nil {
+			pf := h.lfsProxyManager.GetFlight(rv.Oid)
+			if pf != nil {
+				rs := pf.NewReadSeeker()
+				defer rs.Close()
+				http.ServeContent(w, r, rv.Oid, time.Now(), rs)
+				return
+			}
 		}
+		responseJSON(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
+		return
 	}
-	if h.storage.S3Store() != nil {
-		url, err := h.storage.S3Store().SignGet(rv.Oid)
+	if signer, ok := h.storage.LFSStore().(lfs.SignGetter); ok {
+		url, err := signer.SignGet(rv.Oid)
 		if err != nil {
-			responseJSON(w, fmt.Sprintf("failed to sign S3 URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
+			responseJSON(w, fmt.Sprintf("failed to sign URL for LFS object %q: %v", rv.Oid, err), http.StatusInternalServerError)
 			return
 		}
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
-	content, stat, err := h.storage.ContentStore().Get(rv.Oid)
-	if err != nil {
-		if os.IsNotExist(err) {
-			responseJSON(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
-			return
-		}
-		responseJSON(w, fmt.Sprintf("failed to get LFS object %s: %v", rv.Oid, err), http.StatusInternalServerError)
-		return
-	}
-	defer func() {
-		_ = content.Close()
-	}()
-
-	w.Header().Set("ETag", fmt.Sprintf("\"%s\"", rv.Oid))
-	http.ServeContent(w, r, rv.Oid, stat.ModTime(), content)
-}
-
-func (h *Handler) handleVerifyObject(w http.ResponseWriter, r *http.Request) {
-	rv := unpack(r)
-	if h.storage.S3Store() != nil {
-		info, err := h.storage.S3Store().Info(rv.Oid)
+	if getter, ok := h.storage.LFSStore().(lfs.Getter); ok {
+		content, stat, err := getter.Get(rv.Oid)
 		if err != nil {
 			if os.IsNotExist(err) {
 				responseJSON(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)
 				return
 			}
-			responseJSON(w, fmt.Sprintf("failed to get LFS object %s info: %v", rv.Oid, err), http.StatusInternalServerError)
+			responseJSON(w, fmt.Sprintf("failed to get LFS object %s: %v", rv.Oid, err), http.StatusInternalServerError)
 			return
 		}
+		defer func() {
+			_ = content.Close()
+		}()
 
-		if info.Size() != rv.Size {
-			responseJSON(w, "Size mismatch", http.StatusBadRequest)
-			return
-		}
+		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", rv.Oid))
+		http.ServeContent(w, r, rv.Oid, stat.ModTime(), content)
 		return
 	}
-	info, err := h.storage.ContentStore().Info(rv.Oid)
+	responseJSON(w, fmt.Sprintf("LFS store does not support direct content retrieval for object %s", rv.Oid), http.StatusNotImplemented)
+}
+
+func (h *Handler) handleVerifyObject(w http.ResponseWriter, r *http.Request) {
+	rv := unpack(r)
+	info, err := h.storage.LFSStore().Info(rv.Oid)
 	if err != nil {
 		if os.IsNotExist(err) {
 			responseJSON(w, fmt.Sprintf("LFS object %s not found", rv.Oid), http.StatusNotFound)

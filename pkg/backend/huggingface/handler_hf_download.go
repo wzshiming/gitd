@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -162,17 +163,8 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 				// Set HuggingFace-required headers before redirect
 				w.Header().Set("X-Repo-Commit", commitHash)
 				w.Header().Set("ETag", fmt.Sprintf("\"%s\"", ptr.Oid))
-				if h.storage.S3Store() != nil {
-					url, err := h.storage.S3Store().SignGet(ptr.Oid)
-					if err != nil {
-						responseJSON(w, fmt.Errorf("failed to sign S3 URL for LFS object %q: %v", ptr.Oid, err), http.StatusInternalServerError)
-						return
-					}
-					http.Redirect(w, r, url, http.StatusTemporaryRedirect)
-					return
-				}
-				content, stat, err := h.storage.ContentStore().Get(ptr.Oid)
-				if err != nil {
+
+				if !h.storage.LFSStore().Exists(ptr.Oid) {
 					// Try proxy fetch if proxy manager is configured
 					if h.lfsProxyManager != nil {
 						sourceURL := h.getLFSProxySourceURL(repoPath)
@@ -203,11 +195,33 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 					responseJSON(w, fmt.Errorf("LFS object %q not found for file %q in repository %q at revision %q", ptr.Oid, path, ri.RepoPath, ref), http.StatusNotFound)
 					return
 				}
-				defer func() {
-					_ = content.Close()
-				}()
+				if signer, ok := h.storage.LFSStore().(lfs.SignGetter); ok {
+					url, err := signer.SignGet(ptr.Oid)
+					if err != nil {
+						responseJSON(w, fmt.Errorf("failed to sign URL for LFS object %q: %v", ptr.Oid, err), http.StatusInternalServerError)
+						return
+					}
+					http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+					return
+				}
+				if getter, ok := h.storage.LFSStore().(lfs.Getter); ok {
+					content, stat, err := getter.Get(ptr.Oid)
+					if err != nil {
+						if os.IsNotExist(err) {
+							responseJSON(w, fmt.Errorf("LFS object %q not found for file %q in repository %q at revision %q", ptr.Oid, path, ri.RepoPath, ref), http.StatusNotFound)
+							return
+						}
+						responseJSON(w, fmt.Errorf("failed to get LFS object %q: %v", ptr.Oid, err), http.StatusInternalServerError)
+						return
+					}
+					defer func() {
+						_ = content.Close()
+					}()
 
-				http.ServeContent(w, r, ptr.Oid, stat.ModTime(), content)
+					http.ServeContent(w, r, ptr.Oid, stat.ModTime(), content)
+					return
+				}
+				responseJSON(w, fmt.Errorf("LFS store does not support direct content retrieval for object %q", ptr.Oid), http.StatusNotImplemented)
 				return
 			}
 		}
