@@ -47,10 +47,21 @@ func (h *Handler) handleGetLock(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", metaMediaType)
 
+	limit := 0
+	if limitStr := r.FormValue("limit"); limitStr != "" {
+		strtLimit, err := strconv.Atoi(limitStr)
+		if err != nil || strtLimit < 0 {
+			responseJSON(w, &lfs.LockList{Message: "invalid limit parameter"}, http.StatusBadRequest)
+			return
+		}
+		limit = strtLimit
+	}
+
 	locks, nextCursor, err := h.storage.LocksStore().Filtered(repoName,
 		r.FormValue("path"),
 		r.FormValue("cursor"),
-		r.FormValue("limit"))
+		limit,
+	)
 
 	if err != nil {
 		ll.Message = err.Error()
@@ -93,9 +104,11 @@ func (h *Handler) handleLocksVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ll := &lfs.VerifiableLockList{}
-	locks, nextCursor, err := h.storage.LocksStore().Filtered(repoName, "",
+	locks, nextCursor, err := h.storage.LocksStore().Filtered(repoName,
+		"",
 		reqBody.Cursor,
-		strconv.Itoa(limit))
+		limit,
+	)
 	if err != nil {
 		ll.Message = err.Error()
 	} else {
@@ -137,7 +150,7 @@ func (h *Handler) handleCreateLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	locks, _, err := h.storage.LocksStore().Filtered(repoName, lockRequest.Path, "", "1")
+	locks, _, err := h.storage.LocksStore().Filtered(repoName, lockRequest.Path, "", 1)
 	if err != nil {
 		responseJSON(w, &lfs.LockResponse{Message: err.Error()}, http.StatusInternalServerError)
 		return

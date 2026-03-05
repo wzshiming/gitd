@@ -3,9 +3,7 @@ package lfs
 import (
 	"errors"
 	"fmt"
-	"math"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -57,7 +55,7 @@ func (s *LockDB) List(repo string) ([]Lock, error) {
 }
 
 // Filtered return filtered locks for the repo
-func (s *LockDB) Filtered(repo, path, cursor, limit string) (locks []Lock, next string, err error) {
+func (s *LockDB) Filtered(repo, path, cursor string, limit int) (locks []Lock, next string, err error) {
 	locks, err = s.List(repo)
 	if err != nil {
 		return
@@ -91,16 +89,8 @@ func (s *LockDB) Filtered(repo, path, cursor, limit string) (locks []Lock, next 
 		locks = filtered
 	}
 
-	if limit != "" {
-		var size int
-		size, err = strconv.Atoi(limit)
-		if err != nil || size < 0 {
-			locks = make([]Lock, 0)
-			err = fmt.Errorf("invalid limit amount: %s", limit)
-			return
-		}
-
-		size = int(math.Min(float64(size), float64(len(locks))))
+	if limit > 0 {
+		size := int(limit)
 		if size+1 < len(locks) {
 			next = locks[size].Id
 		}
