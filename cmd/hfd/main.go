@@ -22,6 +22,7 @@ import (
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/repository"
 	"github.com/wzshiming/hfd/pkg/s3fs"
+	pkgssh "github.com/wzshiming/hfd/pkg/ssh"
 	"github.com/wzshiming/hfd/pkg/storage"
 )
 
@@ -182,7 +183,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error reading SSH authorized keys file: %v\n", err)
 			os.Exit(1)
 		}
-		parsedKeys, err := backendssh.ParseAuthorizedKeys(authKeysData)
+		parsedKeys, err := pkgssh.ParseAuthorizedKeys(authKeysData)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing SSH authorized keys: %v\n", err)
 			os.Exit(1)
@@ -244,14 +245,14 @@ func main() {
 	}
 
 	if sshAddr != "" {
-		var hostKeySigner backendssh.Signer
+		var hostKeySigner pkgssh.Signer
 		hostKeyPath := sshHostKeyFile
 		if hostKeyPath == "" {
 			hostKeyPath = filepath.Join(absRootDir, "ssh_host_ed25519_key")
 		}
 		data, err := os.ReadFile(hostKeyPath)
 		if err == nil {
-			hostKeySigner, err = backendssh.ParseHostKeyFile(data)
+			hostKeySigner, err = pkgssh.ParseHostKeyFile(data)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error parsing SSH host key file: %v\n", err)
 				os.Exit(1)
@@ -261,7 +262,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
 			os.Exit(1)
 		} else {
-			hostKeySigner, err = backendssh.GenerateAndSaveHostKey(hostKeyPath)
+			hostKeySigner, err = pkgssh.GenerateAndSaveHostKey(hostKeyPath, pkgssh.KeyTypeEd25519)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error generating SSH host key: %v\n", err)
 				os.Exit(1)
