@@ -18,22 +18,18 @@ const Anonymous = "<anonymous>"
 
 type contextKey struct{}
 
-type contextValue struct {
-	User string
-}
-
 // WithContext returns a new context with the user set.
 func WithContext(ctx context.Context, user string) context.Context {
-	return context.WithValue(ctx, contextKey{}, contextValue{User: user})
+	return context.WithValue(ctx, contextKey{}, user)
 }
 
 // GetUser retrieves the user from the context.
 func GetUser(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(contextKey{}).(contextValue)
+	val, ok := ctx.Value(contextKey{}).(string)
 	if !ok {
 		return "", false
 	}
-	return val.User, true
+	return val, true
 }
 
 // BasicAuthValidator validates username/password credentials.
