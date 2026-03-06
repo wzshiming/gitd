@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 )
+
+// lfsConfigContent returns the expected .lfsconfig file content for the given LFS href.
+func lfsConfigContent(lfsHref string) string {
+	return fmt.Sprintf("[lfs]\n\turl = %s\n", lfsHref)
+}
 
 // EnsureLFSConfig ensures the repository has a .lfsconfig file with the given
 // lfs.url value. If .lfsconfig already exists with the correct URL, this is a
@@ -19,24 +23,23 @@ func (r *Repository) EnsureLFSConfig(ctx context.Context, lfsHref string) error 
 		return nil // No commits yet, nothing to do
 	}
 
-	// Check if .lfsconfig already exists with the correct URL
+	expected := lfsConfigContent(lfsHref)
+
+	// Check if .lfsconfig already exists with the correct content
 	blob, err := r.Blob("", ".lfsconfig")
 	if err == nil {
 		reader, err := blob.NewReader()
 		if err == nil {
-			content, _ := io.ReadAll(reader)
+			content, readErr := io.ReadAll(reader)
 			_ = reader.Close()
-			if strings.Contains(string(content), lfsHref) {
+			if readErr == nil && string(content) == expected {
 				return nil // Already configured correctly
 			}
 		}
 	}
 
-	// Create .lfsconfig content
-	content := fmt.Sprintf("[lfs]\n\turl = %s\n", lfsHref)
-
 	// Create commit with .lfsconfig
 	_, err = r.CreateCommit(ctx, "", "Configure LFS URL", "hfd", "hfd@local",
-		[]CommitOperation{{Type: CommitOperationAdd, Path: ".lfsconfig", Content: []byte(content)}}, "")
+		[]CommitOperation{{Type: CommitOperationAdd, Path: ".lfsconfig", Content: []byte(expected)}}, "")
 	return err
 }
