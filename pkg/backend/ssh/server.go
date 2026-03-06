@@ -350,10 +350,10 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	if err == repository.ErrRepositoryNotExists && s.proxyManager != nil {
 		if s.permissionHook != nil {
 			if err := s.permissionHook(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
-				return repository.Open(repoPath)
+				return nil, err
 			}
 		}
-		return s.proxyManager.OpenOrProxy(ctx, repoPath, repoName)
+		return s.proxyManager.Init(ctx, repoPath, repoName)
 	}
 	return nil, err
 }

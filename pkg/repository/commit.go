@@ -9,6 +9,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// Commits returns a list of commits starting from the given revision.
+// If rev is empty, it defaults to the repository's default branch.
+// The limit parameter specifies the maximum number of commits to return.
 func (r *Repository) Commits(rev string, limit int) ([]Commit, error) {
 	if rev == "" {
 		rev = r.DefaultBranch()
@@ -44,6 +47,7 @@ func (r *Repository) Commits(rev string, limit int) ([]Commit, error) {
 	return commits, nil
 }
 
+// Commit represents a Git commit with relevant metadata.
 type Commit struct {
 	SHA     string `json:"sha"`
 	Message string `json:"message"`

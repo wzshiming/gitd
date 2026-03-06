@@ -28,11 +28,13 @@ const (
 	GitLFSTransfer     = "git-lfs-transfer"
 )
 
+// Repository represents a Git repository and provides methods to interact with it.
 type Repository struct {
 	repo     *git.Repository
 	repoPath string
 }
 
+// IsRepository checks if the given path is a valid git repository by looking for the HEAD file and ensuring it's not empty.
 func IsRepository(repoPath string) bool {
 	stat, err := os.Stat(filepath.Join(repoPath, "HEAD"))
 	if err == nil && stat.Size() != 0 {
@@ -41,6 +43,7 @@ func IsRepository(repoPath string) bool {
 	return false
 }
 
+// Init initializes a new git repository at the given path with the specified default branch.
 func Init(repoPath string, defaultBranch string) (*Repository, error) {
 	repo, err := git.PlainInitWithOptions(repoPath, &git.PlainInitOptions{
 		Bare: true,
@@ -68,6 +71,7 @@ func Init(repoPath string, defaultBranch string) (*Repository, error) {
 	}, nil
 }
 
+// ResolvePath resolves a URL path to a filesystem path within the repositories directory, ensuring it ends with .git and preventing path traversal.
 func ResolvePath(repositoriesDir, urlPath string) string {
 	urlPath = strings.TrimPrefix(urlPath, "/")
 	if urlPath == "" {
@@ -90,6 +94,7 @@ func ResolvePath(repositoriesDir, urlPath string) string {
 	return fullPath
 }
 
+// Open opens an existing git repository at the given path.
 func Open(repoPath string) (*Repository, error) {
 	repo, err := git.PlainOpenWithOptions(repoPath, &git.PlainOpenOptions{})
 	if err != nil {
@@ -101,6 +106,7 @@ func Open(repoPath string) (*Repository, error) {
 	}, nil
 }
 
+// SplitRevisionAndPath splits a refpath into a revision (branch or tag) and a file path.
 func (r *Repository) SplitRevisionAndPath(refpath string) (rev string, path string, err error) {
 	if refpath == "" {
 		return r.DefaultBranch(), "", nil
@@ -135,6 +141,7 @@ func (r *Repository) SplitRevisionAndPath(refpath string) (rev string, path stri
 	return refpath, "", nil
 }
 
+// DefaultBranch returns the default branch name of the repository by reading the HEAD file.
 func (r *Repository) DefaultBranch() string {
 	head := filepath.Join(r.repoPath, "HEAD")
 	data, err := os.ReadFile(head)
@@ -149,6 +156,7 @@ func (r *Repository) DefaultBranch() string {
 	return "main"
 }
 
+// Branches returns a list of branch names in the repository.
 func (r *Repository) Branches() ([]string, error) {
 	branchesIter, err := r.repo.Branches()
 	if err != nil {
@@ -171,6 +179,7 @@ func (r *Repository) Branches() ([]string, error) {
 	return branches, nil
 }
 
+// Remove deletes the repository directory and all its contents from disk.
 func (r *Repository) Remove() error {
 	return os.RemoveAll(r.repoPath)
 }
@@ -352,21 +361,4 @@ func (r *Repository) DiskUsage() (int64, error) {
 	}
 
 	return total, nil
-}
-
-func (r *Repository) IsMirror() (bool, string, error) {
-	config, err := r.repo.Config()
-	if err != nil {
-		return false, "", err
-	}
-
-	sourceURL := ""
-	if config != nil {
-		if remote, ok := config.Remotes["origin"]; ok {
-			if len(remote.URLs) > 0 {
-				sourceURL = remote.URLs[0]
-			}
-		}
-	}
-	return sourceURL != "", sourceURL, nil
 }

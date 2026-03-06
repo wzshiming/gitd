@@ -12,6 +12,7 @@ import (
 	"github.com/wzshiming/hfd/pkg/lfs"
 )
 
+// EntryType represents the type of a tree entry, either a file or a directory.
 type EntryType string
 
 const (
@@ -21,22 +22,23 @@ const (
 
 // TreeEntry represents a file or directory in the repository
 type TreeEntry struct {
-	OID        string            `json:"oid"`
-	Path       string            `json:"path"`
-	Type       EntryType         `json:"type"`
-	Size       int64             `json:"size"`
-	LFS        *TreeLFS          `json:"lfs,omitempty"`
-	LastCommit *HFTreeLastCommit `json:"lastCommit,omitempty"`
+	OID        string          `json:"oid"`
+	Path       string          `json:"path"`
+	Type       EntryType       `json:"type"`
+	Size       int64           `json:"size"`
+	LFS        *LFS            `json:"lfs,omitempty"`
+	LastCommit *TreeLastCommit `json:"lastCommit,omitempty"`
 }
 
-type TreeLFS struct {
+// Tree returns the list of files and directories at the given revision and path, with options for recursive traversal and metadata expansion.
+type LFS struct {
 	OID         string `json:"oid"`
 	Size        int64  `json:"size"`
 	PointerSize int64  `json:"pointerSize"`
 }
 
-// HFTreeLastCommit represents the last commit that modified a file or directory
-type HFTreeLastCommit struct {
+// TreeLastCommit represents the last commit that modified a file or directory
+type TreeLastCommit struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Date  string `json:"date"`
@@ -66,7 +68,7 @@ func (r *Repository) blobMetadata(hfentry *TreeEntry) {
 		ptr, err := lfs.DecodePointer(reader)
 		_ = reader.Close()
 		if err == nil && ptr != nil {
-			hfentry.LFS = &TreeLFS{
+			hfentry.LFS = &LFS{
 				OID:         ptr.Oid,
 				Size:        ptr.Size,
 				PointerSize: blob.Size,
@@ -78,7 +80,7 @@ func (r *Repository) blobMetadata(hfentry *TreeEntry) {
 }
 
 // lastCommit fetches the last commit that modified the given path.
-func (r *Repository) lastCommit(commit *object.Commit) (*HFTreeLastCommit, error) {
+func (r *Repository) lastCommit(commit *object.Commit) (*TreeLastCommit, error) {
 	// Get the commit log for this specific file
 	iter, err := r.repo.Log(&git.LogOptions{
 		From: commit.Hash,
@@ -100,13 +102,14 @@ func (r *Repository) lastCommit(commit *object.Commit) (*HFTreeLastCommit, error
 		title = title[:idx]
 	}
 
-	return &HFTreeLastCommit{
+	return &TreeLastCommit{
 		ID:    c.Hash.String(),
 		Title: title,
 		Date:  c.Author.When.UTC().Format(TimeFormat),
 	}, nil
 }
 
+// Tree returns the list of files and directories at the given revision and path, with options for recursive traversal and metadata expansion.
 func (r *Repository) Tree(rev string, path string, opts *TreeOptions) ([]TreeEntry, error) {
 	if rev == "" {
 		rev = r.DefaultBranch()

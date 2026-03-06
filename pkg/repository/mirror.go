@@ -88,6 +88,25 @@ func getDefaultBranch(ctx context.Context, sourceURL string) (string, error) {
 	return "", fmt.Errorf("HEAD symref not found in git ls-remote output")
 }
 
+// IsMirror checks if the repository is a mirror by looking for the "origin" remote and checking its configuration.
+func (r *Repository) IsMirror() (bool, string, error) {
+	config, err := r.repo.Config()
+	if err != nil {
+		return false, "", err
+	}
+
+	sourceURL := ""
+	if config != nil {
+		if remote, ok := config.Remotes["origin"]; ok {
+			if len(remote.URLs) > 0 {
+				sourceURL = remote.URLs[0]
+			}
+		}
+	}
+	return sourceURL != "", sourceURL, nil
+}
+
+// IsMirror checks if the repository is a mirror by looking for the "origin" remote and checking its configuration.
 func (r *Repository) SyncMirror(ctx context.Context) error {
 	args := []string{
 		"fetch",
