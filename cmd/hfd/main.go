@@ -258,7 +258,7 @@ func main() {
 				os.Exit(1)
 			}
 			slog.Info("Loaded SSH host key", "path", hostKeyPath)
-		} else if sshHostKeyFile != "" {
+		} else if sshHostKeyFile != "" || !os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
 			os.Exit(1)
 		} else {

@@ -39,8 +39,14 @@ func TestParseAuthorizedKeys(t *testing.T) {
 	})
 
 	t.Run("MultipleKeys", func(t *testing.T) {
-		_, priv2, _ := ed25519.GenerateKey(rand.Reader)
-		signer2, _ := gossh.NewSignerFromKey(priv2)
+		_, priv2, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("Failed to generate second key: %v", err)
+		}
+		signer2, err := gossh.NewSignerFromKey(priv2)
+		if err != nil {
+			t.Fatalf("Failed to create second signer: %v", err)
+		}
 		authorizedKey2 := gossh.MarshalAuthorizedKey(signer2.PublicKey())
 
 		combined := append(authorizedKey, authorizedKey2...)
@@ -151,6 +157,15 @@ func TestGenerateAndSaveHostKey(t *testing.T) {
 		_, err := pkgssh.GenerateAndSaveHostKey("/nonexistent/dir/key", pkgssh.KeyTypeEd25519)
 		if err == nil {
 			t.Error("Expected error for invalid path")
+		}
+	})
+
+	t.Run("UnsupportedKeyType", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "test_key")
+		_, err := pkgssh.GenerateAndSaveHostKey(path, pkgssh.KeyType("ecdsa"))
+		if err == nil {
+			t.Error("Expected error for unsupported key type")
 		}
 	})
 }
