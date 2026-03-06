@@ -12,13 +12,23 @@ import (
 
 // ProxyFlight tracks an in-flight LFS object download from upstream.
 type ProxyFlight struct {
-	swmr ioswmr.SWMR
-	Size int64
+	swmr  ioswmr.SWMR
+	total int64
 }
 
 // NewReadSeeker returns a new ReadSeeker for serving in-flight content.
 func (f *ProxyFlight) NewReadSeeker() io.ReadSeekCloser {
-	return f.swmr.NewReadSeeker(0, int(f.Size))
+	return f.swmr.NewReadSeeker(0, int(f.total))
+}
+
+// Total returns the total size of the object being fetched.
+func (f *ProxyFlight) Total() int64 {
+	return f.total
+}
+
+// Progress returns the number of bytes currently available for reading.
+func (f *ProxyFlight) Progress() int64 {
+	return int64(f.swmr.Length())
 }
 
 // ProxyManager manages LFS proxy flight deduplication and fetching.
@@ -94,7 +104,7 @@ func (m *ProxyManager) fetchSingleObject(ctx context.Context, oid string, size i
 				m.flights.Delete(oid)
 			}),
 		),
-		Size: size,
+		total: size,
 	}
 
 	m.flights.Store(oid, f)
@@ -117,10 +127,6 @@ func (m *ProxyManager) fetchSingleObject(ctx context.Context, oid string, size i
 		return
 	}
 
-	// Create the reader before starting the writer goroutine.
-	// WithAutoClose triggers TryClose when the writer closes and ReaderUsing()==0.
-	// Holding a reader open before the writer goroutine starts prevents the buffer
-	// from being auto-closed before the put goroutine can read its data.
 	reader := f.swmr.NewReader(0)
 
 	go func() {
