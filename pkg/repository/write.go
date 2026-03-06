@@ -84,7 +84,11 @@ func (r *Repository) CreateCommit(ctx context.Context, rev string, message strin
 		case CommitOperationDelete:
 			cmd := utils.Command(ctx, "git", "update-index", "--force-remove", op.Path)
 			cmd.Env = env
-			_ = cmd.Run() // Ignore error if file doesn't exist
+			if err := cmd.Run(); err != nil {
+				return "", fmt.Errorf("failed to remove path %s from index: %w", op.Path, err)
+			}
+		default:
+			return "", fmt.Errorf("unsupported operation type: %s", op.Type)
 		}
 	}
 

@@ -21,7 +21,8 @@ func NewProxyManager(proxyURL string) *ProxyManager {
 	return p
 }
 
-func (p *ProxyManager) OpenOrProxy(ctx context.Context, repoPath, repoName string) (*Repository, error) {
+// Init initializes a new repository by creating a mirror from the proxy source.
+func (p *ProxyManager) Init(ctx context.Context, repoPath, repoName string) (*Repository, error) {
 	// Create mirror from proxy source
 	sourceURL := strings.TrimSuffix(p.proxyURL, "/") + "/" + repoName
 
