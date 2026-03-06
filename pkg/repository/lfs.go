@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bufio"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -120,8 +121,7 @@ func parseLFSPointerFromBlob(blob *object.Blob) (*LFSPointer, error) {
 
 		// Extract size
 		if after, ok := strings.CutPrefix(line, "size "); ok {
-			sizeStr := after
-			size = parseSize(sizeStr)
+			size, _ = strconv.ParseInt(after, 10, 64)
 		}
 	}
 
@@ -137,17 +137,4 @@ func parseLFSPointerFromBlob(blob *object.Blob) (*LFSPointer, error) {
 	}
 
 	return nil, nil
-}
-
-// parseSize parses a size string into an int64
-func parseSize(s string) int64 {
-	var n int64
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			n = n*10 + int64(c-'0')
-		} else {
-			break
-		}
-	}
-	return n
 }
