@@ -403,25 +403,9 @@ func TestHTTPProxyMirrorWithTeeCache(t *testing.T) {
 	})
 
 	t.Run("CloneFromCachedMirror", func(t *testing.T) {
-		// Wait for the background mirror to be created.
+		// Wait for the background mirror to be created and initialized.
 		mirrorPath := filepath.Join(proxyDataDir, "repositories", org, name+".git")
-		for i := 0; i < 100; i++ {
-			if _, err := os.Stat(filepath.Join(mirrorPath, "HEAD")); err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		// Wait for mirror init to complete (refs must be populated).
-		for i := 0; i < 100; i++ {
-			repo, err := repository.Open(mirrorPath)
-			if err == nil {
-				if isMirror, _, err := repo.IsMirror(); err == nil && isMirror {
-					break
-				}
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		waitForMirror(t, mirrorPath)
 
 		// The mirrored repo should now exist; second clone uses local mirror.
 		cloneDir := filepath.Join(clientDir, "proxy-tee-clone-cached")
@@ -450,12 +434,7 @@ func TestHTTPProxyMirrorWithTeeCache(t *testing.T) {
 	t.Run("PushToMirrorForbidden", func(t *testing.T) {
 		// Wait for mirror to exist first.
 		mirrorPath := filepath.Join(proxyDataDir, "repositories", org, name+".git")
-		for i := 0; i < 100; i++ {
-			if _, err := os.Stat(filepath.Join(mirrorPath, "HEAD")); err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		waitForMirror(t, mirrorPath)
 
 		r, err := http.Get(proxy.URL + "/" + org + "/" + name + ".git/info/refs?service=git-receive-pack")
 		if err != nil {
@@ -466,4 +445,22 @@ func TestHTTPProxyMirrorWithTeeCache(t *testing.T) {
 			t.Errorf("Expected push to mirror to be forbidden, got 200")
 		}
 	})
+}
+
+// waitForMirror polls until a mirror repository is initialized at the given path.
+// It waits for the HEAD file to exist and for the origin remote to be configured.
+func waitForMirror(t *testing.T, mirrorPath string) {
+	t.Helper()
+	const maxAttempts = 100
+	const retryInterval = 100 * time.Millisecond
+
+	for i := 0; i < maxAttempts; i++ {
+		repo, err := repository.Open(mirrorPath)
+		if err == nil {
+			if isMirror, _, err := repo.IsMirror(); err == nil && isMirror {
+				return
+			}
+		}
+		time.Sleep(retryInterval)
+	}
 }

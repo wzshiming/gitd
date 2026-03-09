@@ -53,7 +53,10 @@ func (c *GitTeeCache) IsInFlight(repoPath string) bool {
 	if !ok {
 		return false
 	}
-	state := v.(*mirrorState)
+	state, ok := v.(*mirrorState)
+	if !ok {
+		return false
+	}
 	select {
 	case <-state.done:
 		return false
