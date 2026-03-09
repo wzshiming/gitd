@@ -25,7 +25,7 @@ type Handler struct {
 	next http.Handler
 
 	mirrorSourceFunc repository.MirrorSourceFunc
-	lfsProxyManager  *lfs.ProxyManager
+	lfsTeeCache      *lfs.TeeCache
 	permissionHook   permission.PermissionHook
 	preReceiveHook   receive.PreReceiveHook
 	postReceiveHook  receive.PostReceiveHook
@@ -47,10 +47,10 @@ func WithMirrorSourceFunc(fn repository.MirrorSourceFunc) Option {
 	}
 }
 
-// WithLFSProxyManager sets the LFS proxy manager for transparent upstream object fetching.
-func WithLFSProxyManager(pm *lfs.ProxyManager) Option {
+// WithLFSTeeCache sets the LFS tee cache for transparent upstream object fetching.
+func WithLFSTeeCache(tc *lfs.TeeCache) Option {
 	return func(h *Handler) {
-		h.lfsProxyManager = pm
+		h.lfsTeeCache = tc
 	}
 }
 

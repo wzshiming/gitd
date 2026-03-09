@@ -208,8 +208,8 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("ETag", fmt.Sprintf("\"%s\"", ptr.OID()))
 
 				if !h.lfsStore.Exists(ptr.OID()) {
-					// Try proxy fetch if proxy manager is configured
-					if h.lfsProxyManager != nil {
+					// Try tee cache fetch if configured
+					if h.lfsTeeCache != nil {
 						proxyAllowed := true
 						if h.permissionHook != nil {
 							if err := h.permissionHook(r.Context(), permission.OperationCreateProxyRepo, ri.RepoPath, permission.Context{}); err != nil {
@@ -218,16 +218,20 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 						}
 						sourceURL := h.getLFSProxySourceURL(repoPath)
 						if sourceURL != "" && proxyAllowed {
-							h.lfsProxyManager.FetchFromProxy(context.Background(), sourceURL, []lfs.LFSObject{
+							err = h.lfsTeeCache.StartFetch(context.Background(), sourceURL, []lfs.LFSObject{
 								{Oid: ptr.OID(), Size: ptr.Size()},
 							})
+							if err != nil {
+								responseJSON(w, fmt.Errorf("failed to fetch LFS object %q from upstream source %q: %v", ptr.OID(), sourceURL, err), http.StatusInternalServerError)
+								return
+							}
 
-							pf := h.lfsProxyManager.GetFlight(ptr.OID())
+							pf := h.lfsTeeCache.Get(ptr.OID())
 							// TODO(@wzshiming) We should ideally have a better way to wait for the proxy fetch to complete instead of polling like this,
 							// but this is good enough for now since the client will retry if the file is not ready yet.
 							for i := 0; i != 5; i++ {
 								time.Sleep(500 * time.Millisecond)
-								pf = h.lfsProxyManager.GetFlight(ptr.OID())
+								pf = h.lfsTeeCache.Get(ptr.OID())
 								if pf != nil {
 									break
 								}
@@ -308,9 +312,9 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 }
 
 // getLFSProxySourceURL returns the upstream LFS source URL for a proxied mirror repository.
-// Returns empty string if proxy is not configured or the repo is not a mirror.
+// Returns empty string if tee cache is not configured or the repo is not a mirror.
 func (h *Handler) getLFSProxySourceURL(repoPath string) string {
-	if h.lfsProxyManager == nil {
+	if h.lfsTeeCache == nil {
 		return ""
 	}
 
