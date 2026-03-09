@@ -138,11 +138,11 @@ func main() {
 		)
 	}
 
-	var proxyFunc repository.ProxyFunc
+	var mirrorSourceFunc repository.MirrorSourceFunc
 	var lfsProxyManager *lfs.ProxyManager
 	if proxyURL != "" {
 		slog.Info("Proxy mode enabled", "source", proxyURL)
-		proxyFunc = repository.NewProxyFunc(proxyURL)
+		mirrorSourceFunc = repository.NewMirrorSourceFunc(proxyURL)
 		lfsProxyManager = lfs.NewProxyManager(
 			utils.HTTPClient,
 			lfsStore,
@@ -210,7 +210,7 @@ func main() {
 	handler = backendhuggingface.NewHandler(
 		backendhuggingface.WithStorage(storage),
 		backendhuggingface.WithNext(handler),
-		backendhuggingface.WithProxyFunc(proxyFunc),
+		backendhuggingface.WithMirrorSourceFunc(mirrorSourceFunc),
 		backendhuggingface.WithLFSProxyManager(lfsProxyManager),
 		backendhuggingface.WithPermissionHookFunc(permissionHook),
 		backendhuggingface.WithPreReceiveHookFunc(preReceiveHook),
@@ -230,7 +230,7 @@ func main() {
 	handler = backendhttp.NewHandler(
 		backendhttp.WithStorage(storage),
 		backendhttp.WithNext(handler),
-		backendhttp.WithProxyFunc(proxyFunc),
+		backendhttp.WithMirrorSourceFunc(mirrorSourceFunc),
 		backendhttp.WithPermissionHookFunc(permissionHook),
 		backendhttp.WithPreReceiveHookFunc(preReceiveHook),
 		backendhttp.WithPostReceiveHookFunc(postReceiveHook),
@@ -270,7 +270,7 @@ func main() {
 			backendssh.WithPermissionHookFunc(permissionHook),
 			backendssh.WithPreReceiveHookFunc(preReceiveHook),
 			backendssh.WithPostReceiveHookFunc(postReceiveHook),
-			backendssh.WithProxyFunc(proxyFunc),
+			backendssh.WithMirrorSourceFunc(mirrorSourceFunc),
 			backendssh.WithLFSURL(lfsURL),
 			backendssh.WithBasicAuthValidator(basicAuthValidator),
 			backendssh.WithPublicKeyValidator(publicKeyValidator),

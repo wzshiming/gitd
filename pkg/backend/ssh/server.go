@@ -31,7 +31,7 @@ type PublicKey = ssh.PublicKey
 type Server struct {
 	repositoriesDir    string
 	config             *ssh.ServerConfig
-	proxyFunc          repository.ProxyFunc
+	mirrorSourceFunc   repository.MirrorSourceFunc
 	permissionHook     permission.PermissionHook
 	preReceiveHook     receive.PreReceiveHook
 	postReceiveHook    receive.PostReceiveHook
@@ -58,10 +58,10 @@ func WithPublicKeyCallback(callback func(conn ssh.ConnMetadata, key ssh.PublicKe
 	}
 }
 
-// WithProxyFunc sets the repository proxy callback for the SSH server.
-func WithProxyFunc(fn repository.ProxyFunc) Option {
+// WithMirrorSourceFunc sets the repository proxy callback for the SSH server.
+func WithMirrorSourceFunc(fn repository.MirrorSourceFunc) Option {
 	return func(s *Server) {
-		s.proxyFunc = fn
+		s.mirrorSourceFunc = fn
 	}
 }
 
@@ -455,7 +455,10 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	repo, err := repository.Open(repoPath)
 	if err == nil {
 		if mirror, _, err := repo.IsMirror(); err == nil && mirror {
-			s.syncMirrorWithHook(ctx, repo, repoPath, repoName)
+			err = s.syncMirrorWithHook(ctx, repo, repoName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sync mirror: %w", err)
+			}
 		}
 		return repo, nil
 	}
@@ -463,13 +466,13 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	if service != repository.GitUploadPack {
 		return nil, err
 	}
-	if err == repository.ErrRepositoryNotExists && s.proxyFunc != nil {
+	if err == repository.ErrRepositoryNotExists && s.mirrorSourceFunc != nil {
 		if s.permissionHook != nil {
 			if err := s.permissionHook(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
 				return nil, err
 			}
 		}
-		sourceURL, err := s.proxyFunc(ctx, repoPath, repoName)
+		sourceURL, err := s.mirrorSourceFunc(ctx, repoPath, repoName)
 		if err != nil {
 			return nil, err
 		}
@@ -478,22 +481,24 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 			_ = os.RemoveAll(repoPath)
 			return nil, repository.ErrRepositoryNotExists
 		}
-		s.fireHookForNewMirror(ctx, repo, repoPath, repoName)
+		err = s.syncMirrorWithHook(ctx, repo, repoName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sync mirror: %w", err)
+		}
 		return repo, nil
 	}
 	return nil, err
 }
 
 // syncMirrorWithHook syncs a mirror and fires post-receive hooks for any ref changes.
-func (s *Server) syncMirrorWithHook(ctx context.Context, repo *repository.Repository, repoPath, repoName string) {
+func (s *Server) syncMirrorWithHook(ctx context.Context, repo *repository.Repository, repoName string) error {
 	var before map[string]string
 	if s.postReceiveHook != nil {
 		before, _ = repo.Refs()
 	}
 
 	if err := repo.SyncMirror(ctx); err != nil {
-		s.logger.Warn("failed to sync mirror", "repo", repoName, "error", err)
-		return
+		return fmt.Errorf("failed to sync mirror: %w", err)
 	}
 
 	if s.postReceiveHook != nil {
@@ -501,24 +506,11 @@ func (s *Server) syncMirrorWithHook(ctx context.Context, repo *repository.Reposi
 		updates := receive.DiffRefs(before, after)
 		if len(updates) > 0 {
 			if err := s.postReceiveHook(ctx, repoName, updates); err != nil {
-				s.logger.Warn("post-receive hook error", "repo", repoName, "error", err)
+				return fmt.Errorf("post-receive hook error: %w", err)
 			}
 		}
 	}
-}
-
-// fireHookForNewMirror fires post-receive hooks for all refs in a newly created mirror repo.
-func (s *Server) fireHookForNewMirror(ctx context.Context, repo *repository.Repository, repoPath, repoName string) {
-	if s.postReceiveHook == nil {
-		return
-	}
-	after, _ := repo.Refs()
-	updates := receive.DiffRefs(nil, after)
-	if len(updates) > 0 {
-		if err := s.postReceiveHook(ctx, repoName, updates); err != nil {
-			s.logger.Warn("post-receive hook error", "repo", repoName, "error", err)
-		}
-	}
+	return nil
 }
 
 // lfsAuthResponse is the JSON response returned by git-lfs-authenticate.
