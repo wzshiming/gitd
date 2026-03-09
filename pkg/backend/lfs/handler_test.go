@@ -100,13 +100,13 @@ func TestLFSProxyMode(t *testing.T) {
 	}
 
 	// Set up proxy LFS handler
-	lfsProxyManager := lfs.NewProxyManager(
+	lfsTeeCache := lfs.NewTeeCache(
 		utils.HTTPClient,
 		proxyLFSStore,
 	)
 	proxyHandler := backendlfs.NewHandler(
 		backendlfs.WithStorage(proxyStorage),
-		backendlfs.WithLFSProxyManager(lfsProxyManager),
+		backendlfs.WithLFSTeeCache(lfsTeeCache),
 		backendlfs.WithLFSStore(proxyLFSStore),
 	)
 	proxyServer := httptest.NewServer(proxyHandler)

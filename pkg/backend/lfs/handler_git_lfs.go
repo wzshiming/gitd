@@ -62,18 +62,22 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 	if len(missingObjects) > 0 {
 		proxyURL := h.getProxySourceURL(bv)
 		proxyAllowed := true
-		if proxyURL != "" && h.lfsProxyManager != nil && h.permissionHook != nil {
+		if proxyURL != "" && h.lfsTeeCache != nil && h.permissionHook != nil {
 			repoName := bv.repoName()
 			if err := h.permissionHook(r.Context(), permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
 				proxyAllowed = false
 			}
 		}
-		if proxyURL != "" && h.lfsProxyManager != nil && proxyAllowed {
+		if proxyURL != "" && h.lfsTeeCache != nil && proxyAllowed {
 			lfsObjects := make([]lfs.LFSObject, len(missingObjects))
 			for i, obj := range missingObjects {
 				lfsObjects[i] = lfs.LFSObject{Oid: obj.Oid, Size: obj.Size}
 			}
-			h.lfsProxyManager.FetchFromProxy(context.Background(), proxyURL, lfsObjects)
+			err := h.lfsTeeCache.StartFetch(context.Background(), proxyURL, lfsObjects)
+			if err != nil {
+				responseJSON(w, fmt.Errorf("failed to fetch LFS objects from upstream source %q: %v", proxyURL, err), http.StatusInternalServerError)
+				return
+			}
 			for _, obj := range missingObjects {
 				responseObjects = append(responseObjects, h.lfsRepresent(r.Context(), obj, true, false))
 			}
@@ -103,9 +107,9 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // getProxySourceURL returns the upstream LFS source URL for a proxied mirror repository.
-// Returns empty string if proxy is not configured or the repo is not a mirror.
+// Returns empty string if tee cache is not configured or the repo is not a mirror.
 func (h *Handler) getProxySourceURL(bv *lfsBatchVars) string {
-	if h.lfsProxyManager == nil {
+	if h.lfsTeeCache == nil {
 		return ""
 	}
 
@@ -154,8 +158,8 @@ func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
 	if !h.lfsStore.Exists(rv.Oid) {
-		if h.lfsProxyManager != nil {
-			pf := h.lfsProxyManager.GetFlight(rv.Oid)
+		if h.lfsTeeCache != nil {
+			pf := h.lfsTeeCache.Get(rv.Oid)
 			if pf != nil {
 				rs := pf.NewReadSeeker()
 				defer rs.Close()
