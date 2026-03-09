@@ -166,7 +166,7 @@ func (h *Handler) handleReceivePackWithHook(ctx context.Context, w http.Response
 		return
 	}
 
-	hookOutput := filepath.Join(repoPath, "hooks", "post-receive-output")
+	hookOutput := filepath.Join(repoPath, "hooks", receive.HookOutputFile)
 	defer os.Remove(hookOutput)
 
 	extraEnv := []string{

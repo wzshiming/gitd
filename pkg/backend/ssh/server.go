@@ -341,7 +341,7 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 			sendExitStatus(channel, 1)
 			return
 		}
-		hookOutput = filepath.Join(fullPath, "hooks", "post-receive-output")
+		hookOutput = filepath.Join(fullPath, "hooks", receive.HookOutputFile)
 		defer os.Remove(hookOutput)
 		cmd.Env = append(os.Environ(),
 			receive.EnvRepoName+"="+repoPath,

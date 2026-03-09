@@ -14,6 +14,10 @@ const (
 	// EnvHookOutput is set by the server to tell the hook script where
 	// to write the ref-update lines captured from stdin.
 	EnvHookOutput = "HFD_HOOK_OUTPUT"
+
+	// HookOutputFile is the filename used for the hook output file
+	// within the repository's hooks directory.
+	HookOutputFile = "post-receive-output"
 )
 
 // postReceiveScript is the shell script installed as the post-receive hook.
