@@ -1,11 +1,13 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 
@@ -140,33 +142,43 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 		}
 	}
 
-	// Snapshot refs before receive-pack for hook event detection
-	var refsBefore map[string]string
+	// Set up hook output capture for receive-pack
+	var hookOutputFile string
+	var extraEnv []string
 	if service == repository.GitReceivePack && h.receiveHook != nil {
-		var err error
-		refsBefore, err = repo.Refs()
+		tmpFile, err := os.CreateTemp("", "hfd-hook-*")
 		if err != nil {
-			slog.Warn("failed to snapshot refs before receive-pack", "repo", repoName, "error", err)
+			slog.Warn("failed to create hook output file", "repo", repoName, "error", err)
+		} else {
+			hookOutputFile = tmpFile.Name()
+			tmpFile.Close()
+			defer os.Remove(hookOutputFile)
+			extraEnv = []string{
+				"HFD_REPO_NAME=" + repoName,
+				"HFD_HOOK_OUTPUT=" + hookOutputFile,
+			}
 		}
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-result", service))
 	w.Header().Set("Cache-Control", "no-cache")
 
-	err = repo.Stateless(r.Context(), w, r.Body, service, false)
+	err = repo.Stateless(r.Context(), w, r.Body, service, false, extraEnv...)
 	if err != nil {
 		responseText(w, fmt.Sprintf("Failed to get info refs for %q: %v", repoName, err), http.StatusInternalServerError)
 		return
 	}
 
-	// Fire receive hook after successful receive-pack
-	if service == repository.GitReceivePack && h.receiveHook != nil {
-		refsAfter, err := repo.Refs()
+	// Read ref updates captured by the post-receive hook script
+	if hookOutputFile != "" {
+		data, err := os.ReadFile(hookOutputFile)
 		if err != nil {
-			slog.Warn("failed to snapshot refs after receive-pack", "repo", repoName, "error", err)
-		} else {
-			updates := receive.DiffRefs(refsBefore, refsAfter)
-			if len(updates) > 0 {
+			slog.Warn("failed to read hook output", "repo", repoName, "error", err)
+		} else if len(data) > 0 {
+			updates, err := receive.ParseRefUpdates(bytes.NewReader(data))
+			if err != nil {
+				slog.Warn("failed to parse hook output", "repo", repoName, "error", err)
+			} else if len(updates) > 0 {
 				if err := h.receiveHook(r.Context(), repoName, updates); err != nil {
 					slog.Warn("receive hook failed", "repo", repoName, "error", err)
 				}

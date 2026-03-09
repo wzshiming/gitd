@@ -11,6 +11,10 @@ const preReceiveScript = `#!/bin/sh
 # Reads ref updates from stdin, one per line:
 #   <old-value> <new-value> <ref-name>
 # Exit non-zero to reject the push.
+#
+# Environment variables set by the server:
+#   HFD_REPO_NAME    - the repository name (storage path)
+#   HFD_HOOK_OUTPUT  - path to write ref updates for the server
 exit 0
 `
 
@@ -18,7 +22,15 @@ const postReceiveScript = `#!/bin/sh
 # post-receive hook - invoked by git-receive-pack after updating refs.
 # Reads ref updates from stdin, one per line:
 #   <old-value> <new-value> <ref-name>
-exit 0
+#
+# Environment variables set by the server:
+#   HFD_REPO_NAME    - the repository name (storage path)
+#   HFD_HOOK_OUTPUT  - path to write ref updates for the server
+#
+# Capture ref updates so the server can process them.
+if [ -n "$HFD_HOOK_OUTPUT" ]; then
+    cat > "$HFD_HOOK_OUTPUT"
+fi
 `
 
 // InstallHooks creates the pre-receive and post-receive hook scripts in the

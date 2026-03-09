@@ -2,7 +2,9 @@ package receive
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,4 +112,76 @@ func TestInstallHooksCreatesDirectory(t *testing.T) {
 	if !info.IsDir() {
 		t.Errorf("hooks is not a directory")
 	}
+}
+
+func TestPostReceiveScriptCapturesRefUpdates(t *testing.T) {
+	repoPath := t.TempDir()
+
+	err := InstallHooks(repoPath)
+	if err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+
+	// Create a temp file for hook output
+	outputFile := filepath.Join(t.TempDir(), "hook-output")
+
+	// Simulate running the post-receive hook with ref updates on stdin
+	refUpdates := "abc123 def456 refs/heads/main\n" +
+		ZeroHash + " aaa111 refs/tags/v1.0\n"
+
+	hookScript := filepath.Join(repoPath, "hooks", "post-receive")
+	cmd := exec.Command("/bin/sh", hookScript)
+	cmd.Stdin = strings.NewReader(refUpdates)
+	cmd.Env = append(os.Environ(),
+		"HFD_REPO_NAME=test/repo",
+		"HFD_HOOK_OUTPUT="+outputFile,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("post-receive hook failed: %v", err)
+	}
+
+	// Verify the output file contains the ref updates
+	data, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("failed to read hook output: %v", err)
+	}
+
+	updates, err := ParseRefUpdates(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("failed to parse hook output: %v", err)
+	}
+
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 updates, got %d", len(updates))
+	}
+
+	if updates[0].RefName != "refs/heads/main" || updates[0].OldRev != "abc123" || updates[0].NewRev != "def456" {
+		t.Errorf("unexpected first update: %+v", updates[0])
+	}
+	if updates[1].RefName != "refs/tags/v1.0" || updates[1].OldRev != ZeroHash || updates[1].NewRev != "aaa111" {
+		t.Errorf("unexpected second update: %+v", updates[1])
+	}
+}
+
+func TestPostReceiveScriptNoOutputWithoutEnv(t *testing.T) {
+	repoPath := t.TempDir()
+
+	err := InstallHooks(repoPath)
+	if err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+
+	// Run the post-receive hook without HFD_HOOK_OUTPUT set
+	refUpdates := "abc123 def456 refs/heads/main\n"
+
+	hookScript := filepath.Join(repoPath, "hooks", "post-receive")
+	cmd := exec.Command("/bin/sh", hookScript)
+	cmd.Stdin = strings.NewReader(refUpdates)
+	// Don't set HFD_HOOK_OUTPUT
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("post-receive hook failed: %v", err)
+	}
+	// Script should exit 0 without errors when HFD_HOOK_OUTPUT is not set
 }

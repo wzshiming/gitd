@@ -1,12 +1,14 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -327,20 +329,27 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 		}
 	}
 
-	// Snapshot refs before receive-pack for hook event detection
-	var refsBefore map[string]string
-	if service == repository.GitReceivePack && s.receiveHook != nil {
-		var err error
-		refsBefore, err = repo.Refs()
-		if err != nil {
-			s.logger.Warn("ssh protocol: failed to snapshot refs before receive-pack", "repo", repoPath, "error", err)
-		}
-	}
-
+	// Set up hook output capture for receive-pack
+	var hookOutputFile string
 	cmd := utils.Command(ctx, service, fullPath)
 	cmd.Stdin = channel
 	cmd.Stdout = channel
 	cmd.Stderr = channel.Stderr()
+
+	if service == repository.GitReceivePack && s.receiveHook != nil {
+		tmpFile, err := os.CreateTemp("", "hfd-hook-*")
+		if err != nil {
+			s.logger.Warn("ssh protocol: failed to create hook output file", "repo", repoPath, "error", err)
+		} else {
+			hookOutputFile = tmpFile.Name()
+			tmpFile.Close()
+			defer os.Remove(hookOutputFile)
+			cmd.Env = append(os.Environ(),
+				"HFD_REPO_NAME="+repoPath,
+				"HFD_HOOK_OUTPUT="+hookOutputFile,
+			)
+		}
+	}
 
 	if err := cmd.Run(); err != nil {
 		s.logger.Error("ssh protocol: command failed", "service", service, "error", err)
@@ -348,14 +357,16 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 		return
 	}
 
-	// Fire receive hook after successful receive-pack
-	if service == repository.GitReceivePack && s.receiveHook != nil {
-		refsAfter, err := repo.Refs()
+	// Read ref updates captured by the post-receive hook script
+	if hookOutputFile != "" {
+		data, err := os.ReadFile(hookOutputFile)
 		if err != nil {
-			s.logger.Warn("ssh protocol: failed to snapshot refs after receive-pack", "repo", repoPath, "error", err)
-		} else {
-			updates := receive.DiffRefs(refsBefore, refsAfter)
-			if len(updates) > 0 {
+			s.logger.Warn("ssh protocol: failed to read hook output", "repo", repoPath, "error", err)
+		} else if len(data) > 0 {
+			updates, err := receive.ParseRefUpdates(bytes.NewReader(data))
+			if err != nil {
+				s.logger.Warn("ssh protocol: failed to parse hook output", "repo", repoPath, "error", err)
+			} else if len(updates) > 0 {
 				if err := s.receiveHook(ctx, repoPath, updates); err != nil {
 					s.logger.Warn("receive hook failed", "repo", repoPath, "error", err)
 				}
