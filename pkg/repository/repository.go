@@ -28,6 +28,12 @@ const (
 	GitLFSTransfer     = "git-lfs-transfer"
 )
 
+// IsValidGitProtocol reports whether v is a recognised Git-Protocol version value.
+// Only "version=1" and "version=2" are currently accepted.
+func IsValidGitProtocol(v string) bool {
+	return v == "version=1" || v == "version=2"
+}
+
 // Repository represents a Git repository and provides methods to interact with it.
 type Repository struct {
 	repo     *git.Repository

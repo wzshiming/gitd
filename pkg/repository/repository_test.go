@@ -88,3 +88,27 @@ func TestDiskUsageIncludesLFSSize(t *testing.T) {
 			lfsSize, usageBefore, usageAfter, usageAfter-usageBefore)
 	}
 }
+
+func TestIsValidGitProtocol(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{value: "version=1", want: true},
+		{value: "version=2", want: true},
+		{value: "version=0", want: false},
+		{value: "version=3", want: false},
+		{value: "version=99", want: false},
+		{value: "", want: false},
+		{value: "v1", want: false},
+		{value: "1", want: false},
+		{value: "version=1 ", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			if got := IsValidGitProtocol(tt.value); got != tt.want {
+				t.Errorf("IsValidGitProtocol(%q) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+}

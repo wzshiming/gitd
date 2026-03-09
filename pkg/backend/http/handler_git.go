@@ -80,6 +80,10 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 
 	var extraEnv []string
 	if gitProtocol := r.Header.Get("Git-Protocol"); gitProtocol != "" {
+		if !repository.IsValidGitProtocol(gitProtocol) {
+			responseText(w, fmt.Sprintf("unsupported Git-Protocol value: %q", gitProtocol), http.StatusBadRequest)
+			return
+		}
 		extraEnv = append(extraEnv, "GIT_PROTOCOL="+gitProtocol)
 	}
 
@@ -148,6 +152,10 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 
 	var extraEnv []string
 	if gitProtocol := r.Header.Get("Git-Protocol"); gitProtocol != "" {
+		if !repository.IsValidGitProtocol(gitProtocol) {
+			responseText(w, fmt.Sprintf("unsupported Git-Protocol value: %q", gitProtocol), http.StatusBadRequest)
+			return
+		}
 		extraEnv = append(extraEnv, "GIT_PROTOCOL="+gitProtocol)
 	}
 

@@ -234,9 +234,11 @@ func (s *Server) handleSession(ctx context.Context, channel ssh.Channel, request
 	for req := range requests {
 		switch req.Type {
 		case "env":
-			// Accept GIT_PROTOCOL env requests for Git protocol v2 support.
+			// Accept GIT_PROTOCOL env requests for Git protocol v1/v2 support.
+			// Only the known values "version=1" and "version=2" are forwarded;
+			// other variables and unknown versions are silently ignored.
 			name, value, ok := parseEnvRequest(req.Payload)
-			if ok && name == "GIT_PROTOCOL" {
+			if ok && name == "GIT_PROTOCOL" && repository.IsValidGitProtocol(value) {
 				extraEnv = append(extraEnv, "GIT_PROTOCOL="+value)
 			}
 			if req.WantReply {

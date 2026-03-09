@@ -147,6 +147,13 @@ func TestParseEnvRequest(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			name:      "GIT_PROTOCOL version=1",
+			payload:   makeEnvPayload("GIT_PROTOCOL", "version=1"),
+			wantName:  "GIT_PROTOCOL",
+			wantValue: "version=1",
+			wantOK:    true,
+		},
+		{
 			name:      "other variable",
 			payload:   makeEnvPayload("HOME", "/home/user"),
 			wantName:  "HOME",
