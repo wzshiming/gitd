@@ -188,13 +188,13 @@ func (h *Handler) openRepo(ctx context.Context, repoPath, repoName, service stri
 	if service != repository.GitUploadPack {
 		return nil, err
 	}
-	if err == repository.ErrRepositoryNotExists && h.proxyManager != nil {
+	if err == repository.ErrRepositoryNotExists && h.proxyFunc != nil {
 		if h.permissionHook != nil {
 			if err := h.permissionHook(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
 				return nil, err
 			}
 		}
-		repo, err := h.proxyManager.Init(ctx, repoPath, repoName)
+		repo, err := h.proxyFunc(ctx, repoPath, repoName)
 		if err != nil {
 			return nil, err
 		}

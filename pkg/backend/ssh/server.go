@@ -31,7 +31,7 @@ type PublicKey = ssh.PublicKey
 type Server struct {
 	repositoriesDir    string
 	config             *ssh.ServerConfig
-	proxyManager       *repository.ProxyManager
+	proxyFunc          repository.ProxyFunc
 	permissionHook     permission.PermissionHook
 	preReceiveHook     receive.PreReceiveHook
 	postReceiveHook    receive.PostReceiveHook
@@ -58,10 +58,10 @@ func WithPublicKeyCallback(callback func(conn ssh.ConnMetadata, key ssh.PublicKe
 	}
 }
 
-// WithProxyManager sets the proxy manager for the SSH server.
-func WithProxyManager(pm *repository.ProxyManager) Option {
+// WithProxyFunc sets the repository proxy callback for the SSH server.
+func WithProxyFunc(fn repository.ProxyFunc) Option {
 	return func(s *Server) {
-		s.proxyManager = pm
+		s.proxyFunc = fn
 	}
 }
 
@@ -463,13 +463,13 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	if service != repository.GitUploadPack {
 		return nil, err
 	}
-	if err == repository.ErrRepositoryNotExists && s.proxyManager != nil {
+	if err == repository.ErrRepositoryNotExists && s.proxyFunc != nil {
 		if s.permissionHook != nil {
 			if err := s.permissionHook(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
 				return nil, err
 			}
 		}
-		repo, err := s.proxyManager.Init(ctx, repoPath, repoName)
+		repo, err := s.proxyFunc(ctx, repoPath, repoName)
 		if err != nil {
 			return nil, err
 		}

@@ -176,7 +176,7 @@ func TestHTTPProxyMode(t *testing.T) {
 
 	proxyHandler := backendhttp.NewHandler(
 		backendhttp.WithStorage(proxyStorage),
-		backendhttp.WithProxyManager(repository.NewProxyManager(upstreamServer.URL)),
+		backendhttp.WithProxyFunc(repository.NewProxyFunc(upstreamServer.URL)),
 	)
 	proxyServer := httptest.NewServer(proxyHandler)
 	defer proxyServer.Close()

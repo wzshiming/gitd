@@ -23,7 +23,7 @@ type Handler struct {
 
 	next http.Handler
 
-	proxyManager    *repository.ProxyManager
+	proxyFunc       repository.ProxyFunc
 	lfsProxyManager *lfs.ProxyManager
 	permissionHook  permission.PermissionHook
 	preReceiveHook  receive.PreReceiveHook
@@ -39,10 +39,10 @@ func WithStorage(storage *storage.Storage) Option {
 	}
 }
 
-// WithProxyManager sets the repository proxy manager for transparent upstream repository fetching.
-func WithProxyManager(pm *repository.ProxyManager) Option {
+// WithProxyFunc sets the repository proxy callback for transparent upstream repository fetching.
+func WithProxyFunc(fn repository.ProxyFunc) Option {
 	return func(h *Handler) {
-		h.proxyManager = pm
+		h.proxyFunc = fn
 	}
 }
 
@@ -210,13 +210,13 @@ func (h *Handler) openRepo(ctx context.Context, repoPath, repoName string) (*rep
 		}
 		return repo, nil
 	}
-	if err == repository.ErrRepositoryNotExists && h.proxyManager != nil {
+	if err == repository.ErrRepositoryNotExists && h.proxyFunc != nil {
 		if h.permissionHook != nil {
 			if err := h.permissionHook(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
 				return nil, err
 			}
 		}
-		repo, err := h.proxyManager.Init(ctx, repoPath, repoName)
+		repo, err := h.proxyFunc(ctx, repoPath, repoName)
 		if err != nil {
 			return nil, err
 		}
