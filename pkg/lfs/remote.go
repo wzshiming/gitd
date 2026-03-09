@@ -14,56 +14,56 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 )
 
-// Client handles fetching LFS objects from remote Git LFS servers
-type Client struct {
+// client handles fetching LFS objects from remote Git LFS servers
+type client struct {
 	httpClient *http.Client
 }
 
-// NewClient creates a new RemoteClient for fetching LFS objects
-func NewClient(httpClient *http.Client) *Client {
-	return &Client{
+// newClient creates a new RemoteClient for fetching LFS objects
+func newClient(httpClient *http.Client) *client {
+	return &client{
 		httpClient: httpClient,
 	}
 }
 
-// BatchRequest represents a request to the LFS batch API
-type BatchRequest struct {
+// batchRequest represents a request to the LFS batch API
+type batchRequest struct {
 	Operation string        `json:"operation"`
 	Transfers []string      `json:"transfers,omitempty"`
-	Objects   []BatchObject `json:"objects"`
+	Objects   []batchObject `json:"objects"`
 }
 
-// BatchObject represents an object in a batch request
-type BatchObject struct {
+// batchObject represents an object in a batch request
+type batchObject struct {
 	Oid  string `json:"oid"`
 	Size int64  `json:"size"`
 }
 
-// BatchResponse represents a response from the LFS batch API
-type BatchResponse struct {
+// batchResponse represents a response from the LFS batch API
+type batchResponse struct {
 	Transfer string                `json:"transfer,omitempty"`
-	Objects  []BatchResponseObject `json:"objects"`
+	Objects  []batchResponseObject `json:"objects"`
 }
 
-// BatchResponseObject represents an object in a batch response
-type BatchResponseObject struct {
+// batchResponseObject represents an object in a batch response
+type batchResponseObject struct {
 	Oid           string            `json:"oid"`
 	Size          int64             `json:"size"`
 	Authenticated bool              `json:"authenticated,omitempty"`
-	Actions       map[string]Action `json:"actions,omitempty"`
-	Error         *ObjectError      `json:"error,omitempty"`
+	Actions       map[string]action `json:"actions,omitempty"`
+	Error         *objectError      `json:"error,omitempty"`
 }
 
-// Action represents an action in a batch response
-type Action struct {
+// action represents an action in a batch response
+type action struct {
 	Href      string            `json:"href"`
 	Header    map[string]string `json:"header,omitempty"`
 	ExpiresIn int               `json:"expires_in,omitempty"`
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
-// ObjectError represents an error for an object in a batch response
-type ObjectError struct {
+// objectError represents an error for an object in a batch response
+type objectError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
@@ -85,19 +85,19 @@ func getLFSEndpoint(repoURL string) string {
 }
 
 // GetBatch requests download URLs for LFS objects using the batch API
-func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFSObject) (*BatchResponse, error) {
+func (c *client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFSObject) (*batchResponse, error) {
 	if len(objects) == 0 {
-		return &BatchResponse{}, nil
+		return &batchResponse{}, nil
 	}
 
 	batchURL := getLFSEndpoint(lfsEndpoint)
 
-	batchObjects := make([]BatchObject, len(objects))
+	batchObjects := make([]batchObject, len(objects))
 	for i, obj := range objects {
-		batchObjects[i] = BatchObject(obj)
+		batchObjects[i] = batchObject(obj)
 	}
 
-	reqBody := BatchRequest{
+	reqBody := batchRequest{
 		Operation: "download",
 		Transfers: []string{"basic"},
 		Objects:   batchObjects,
@@ -130,7 +130,7 @@ func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFS
 		return nil, fmt.Errorf("batch request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var batchResp BatchResponse
+	var batchResp batchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
 		return nil, fmt.Errorf("failed to decode batch response: %w", err)
 	}
@@ -138,7 +138,7 @@ func (c *Client) GetBatch(ctx context.Context, lfsEndpoint string, objects []LFS
 	return &batchResp, nil
 }
 
-func (a Action) Request(ctx context.Context) (*http.Request, error) {
+func (a action) Request(ctx context.Context) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.Href, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

@@ -139,11 +139,11 @@ func main() {
 	}
 
 	var mirrorSourceFunc repository.MirrorSourceFunc
-	var lfsProxyManager *lfs.ProxyManager
+	var lfsTeeCache *lfs.TeeCache
 	if proxyURL != "" {
 		slog.Info("Proxy mode enabled", "source", proxyURL)
 		mirrorSourceFunc = repository.NewMirrorSourceFunc(proxyURL)
-		lfsProxyManager = lfs.NewProxyManager(
+		lfsTeeCache = lfs.NewTeeCache(
 			utils.HTTPClient,
 			lfsStore,
 		)
@@ -211,7 +211,7 @@ func main() {
 		backendhuggingface.WithStorage(storage),
 		backendhuggingface.WithNext(handler),
 		backendhuggingface.WithMirrorSourceFunc(mirrorSourceFunc),
-		backendhuggingface.WithLFSProxyManager(lfsProxyManager),
+		backendhuggingface.WithLFSTeeCache(lfsTeeCache),
 		backendhuggingface.WithPermissionHookFunc(permissionHook),
 		backendhuggingface.WithPreReceiveHookFunc(preReceiveHook),
 		backendhuggingface.WithPostReceiveHookFunc(postReceiveHook),
@@ -221,7 +221,7 @@ func main() {
 	handler = backendlfs.NewHandler(
 		backendlfs.WithStorage(storage),
 		backendlfs.WithNext(handler),
-		backendlfs.WithLFSProxyManager(lfsProxyManager),
+		backendlfs.WithLFSTeeCache(lfsTeeCache),
 		backendlfs.WithPermissionHookFunc(permissionHook),
 		backendlfs.WithTokenSignValidator(tokenSignValidator),
 		backendlfs.WithLFSStore(lfsStore),
