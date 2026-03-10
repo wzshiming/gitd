@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/wzshiming/hfd/internal/utils"
 )
@@ -15,9 +14,7 @@ import (
 // If advertise is true, it sends the initial packet-line advertisement for the service.
 // extraEnv contains optional additional environment variables (e.g. "GIT_PROTOCOL=version=2") to set on the git process.
 func (r *Repository) Stateless(ctx context.Context, output io.Writer, input io.Reader, service string, advertise bool, extraEnv ...string) error {
-	base, dir := filepath.Split(r.repoPath)
-
-	var args []string
+	args := []string{"--stateless-rpc"}
 
 	if advertise {
 		// Write packet-line formatted header
@@ -28,16 +25,13 @@ func (r *Repository) Stateless(ctx context.Context, output io.Writer, input io.R
 			return err
 		}
 
-		args = []string{
-			"--stateless-rpc", "--advertise-refs", dir,
-		}
-	} else {
-		args = []string{
-			"--stateless-rpc", dir,
-		}
+		args = append(args, "--advertise-refs")
 	}
+
+	args = append(args, ".")
+
 	cmd := utils.Command(ctx, service, args...)
-	cmd.Dir = base
+	cmd.Dir = r.repoPath
 	cmd.Stdin = input
 	cmd.Stdout = output
 	if len(extraEnv) > 0 {
