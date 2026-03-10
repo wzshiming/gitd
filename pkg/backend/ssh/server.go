@@ -355,7 +355,8 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 		return
 	}
 
-	cmd := utils.Command(ctx, service, fullPath)
+	cmd := utils.Command(ctx, service, ".")
+	cmd.Dir = fullPath
 	cmd.Stdin = channel
 	cmd.Stdout = channel
 	cmd.Stderr = channel.Stderr()
@@ -388,7 +389,8 @@ func (s *Server) executeReceivePackWithHooks(ctx context.Context, channel ssh.Ch
 	pr, pw := io.Pipe()
 	defer pr.Close()
 
-	cmd := utils.Command(ctx, service, fullPath)
+	cmd := utils.Command(ctx, service, ".")
+	cmd.Dir = fullPath
 	cmd.Stdin = pr
 	cmd.Stdout = channel
 	cmd.Stderr = channel.Stderr()
