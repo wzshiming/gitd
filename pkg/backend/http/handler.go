@@ -14,20 +14,19 @@ import (
 
 // Handler
 type Handler struct {
-	storage *storage.Storage
-
-	root *mux.Router
-
-	next http.Handler
-
+	storage          *storage.Storage
+	root             *mux.Router
+	next             http.Handler
 	mirrorSourceFunc repository.MirrorSourceFunc
 	permissionHook   permission.PermissionHook
 	preReceiveHook   receive.PreReceiveHook
 	postReceiveHook  receive.PostReceiveHook
 }
 
+// Option defines a functional option for configuring the Handler.
 type Option func(*Handler)
 
+// WithStorage sets the storage backend for the handler. This is required.
 func WithStorage(storage *storage.Storage) Option {
 	return func(h *Handler) {
 		h.storage = storage

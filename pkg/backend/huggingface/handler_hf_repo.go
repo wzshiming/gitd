@@ -326,7 +326,7 @@ func (h *Handler) handleCreateBranch(w http.ResponseWriter, r *http.Request) {
 		if hookErr := h.postReceiveHook(r.Context(), ri.RepoPath, []receive.RefUpdate{
 			{OldRev: receive.ZeroHash, NewRev: hash, RefName: "refs/heads/" + rev},
 		}); hookErr != nil {
-			slog.Warn("post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
+			slog.WarnContext(r.Context(), "post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
 		}
 	}
 
@@ -401,7 +401,7 @@ func (h *Handler) handleDeleteBranch(w http.ResponseWriter, r *http.Request) {
 
 	if h.postReceiveHook != nil {
 		if hookErr := h.postReceiveHook(r.Context(), ri.RepoPath, updates); hookErr != nil {
-			slog.Warn("post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
+			slog.WarnContext(r.Context(), "post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
 		}
 	}
 
@@ -484,7 +484,7 @@ func (h *Handler) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		if hookErr := h.postReceiveHook(r.Context(), ri.RepoPath, []receive.RefUpdate{
 			{OldRev: receive.ZeroHash, NewRev: hash, RefName: "refs/tags/" + req.Tag},
 		}); hookErr != nil {
-			slog.Warn("post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
+			slog.WarnContext(r.Context(), "post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
 		}
 	}
 
@@ -553,7 +553,7 @@ func (h *Handler) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	if h.postReceiveHook != nil {
 		if hookErr := h.postReceiveHook(r.Context(), ri.RepoPath, updates); hookErr != nil {
-			slog.Warn("post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
+			slog.WarnContext(r.Context(), "post-receive hook error", "repo", ri.RepoPath, "error", hookErr)
 		}
 	}
 

@@ -39,18 +39,10 @@ type TeeCache struct {
 	httpClient *http.Client
 	cache      sync.Map
 	store      Store
-	logger     *slog.Logger
 }
 
 // TeeCacheOption configures a TeeCache.
 type TeeCacheOption func(*TeeCache)
-
-// WithLogger sets the logger for the TeeCache.
-func WithLogger(logger *slog.Logger) TeeCacheOption {
-	return func(p *TeeCache) {
-		p.logger = logger
-	}
-}
 
 // NewTeeCache creates a new TeeCache.
 // store is used to persist fetched objects and check if objects already exist locally.
@@ -58,7 +50,6 @@ func NewTeeCache(httpClient *http.Client, store Store, opts ...TeeCacheOption) *
 	p := &TeeCache{
 		httpClient: httpClient,
 		store:      store,
-		logger:     slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -105,7 +96,7 @@ func (m *TeeCache) StartFetch(ctx context.Context, sourceURL string, objects []L
 			continue
 		}
 
-		m.logger.Info("LFS tee cache: fetching object from upstream", "oid", obj.Oid)
+		slog.InfoContext(ctx, "LFS tee cache: fetching object from upstream", "oid", obj.Oid)
 		m.fetchSingleObject(context.Background(), obj.Oid, obj.Size, downloadAction)
 	}
 	return nil
@@ -129,19 +120,19 @@ func (m *TeeCache) fetchSingleObject(ctx context.Context, oid string, size int64
 
 	req, err := downloadAction.Request(ctx)
 	if err != nil {
-		m.logger.Error("LFS tee cache: failed to create download request", "oid", oid, "error", err)
+		slog.ErrorContext(ctx, "LFS tee cache: failed to create download request", "oid", oid, "error", err)
 		return
 	}
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
-		m.logger.Error("LFS tee cache: failed to download object", "oid", oid, "error", err)
+		slog.ErrorContext(ctx, "LFS tee cache: failed to download object", "oid", oid, "error", err)
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		resp.Body.Close()
-		m.logger.Error("LFS tee cache: unexpected status code when downloading object", "status", resp.StatusCode, "oid", oid, "url", req.URL, "body", string(body))
+		slog.ErrorContext(ctx, "LFS tee cache: unexpected status code when downloading object", "status", resp.StatusCode, "oid", oid, "url", req.URL, "body", string(body))
 		return
 	}
 
@@ -158,7 +149,7 @@ func (m *TeeCache) fetchSingleObject(ctx context.Context, oid string, size int64
 	go func() {
 		defer reader.Close()
 		if err := m.store.Put(oid, reader, size); err != nil {
-			m.logger.Error("LFS tee cache: failed to store object", "oid", oid, "error", err)
+			slog.ErrorContext(ctx, "LFS tee cache: failed to store object", "oid", oid, "error", err)
 			return
 		}
 	}()
