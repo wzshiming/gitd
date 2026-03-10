@@ -158,7 +158,7 @@ func setupSSHServerWithHooks(t *testing.T, preReceiveHook receive.PreReceiveHook
 	t.Cleanup(func() { listener.Close() })
 
 	go func() {
-		_ = sshServer.Serve(listener)
+		_ = sshServer.Serve(t.Context(), listener)
 	}()
 
 	return httpServer, listener, dataDir

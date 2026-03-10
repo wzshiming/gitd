@@ -88,9 +88,10 @@ func init() {
 }
 
 func main() {
+	ctx := context.Background()
 	absRootDir, err := filepath.Abs(dataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting absolute path of repo directory: %v\n", err)
+		slog.ErrorContext(ctx, "Error getting absolute path of repo directory", "path", dataDir, "error", err)
 		os.Exit(1)
 	}
 
@@ -98,13 +99,13 @@ func main() {
 		storage.WithRootDir(absRootDir),
 	)
 
-	slog.Info("Starting hfd server", "addr", addr, "data", absRootDir)
+	slog.InfoContext(ctx, "Starting hfd server", "addr", addr, "data", absRootDir)
 
 	var lfsStore = lfs.NewLocal(storage.LFSDir())
 	if s3Endpoint != "" && s3Bucket != "" {
 		if s3Repositories {
 			repositoriesDir := filepath.Join(absRootDir, "repositories")
-			slog.Info("Mounting S3 bucket", "bucket", s3Bucket, "path", repositoriesDir)
+			slog.InfoContext(ctx, "Mounting S3 bucket", "bucket", s3Bucket, "path", repositoriesDir)
 			err := s3fs.Mount(
 				context.Background(),
 				repositoriesDir,
@@ -116,13 +117,13 @@ func main() {
 				s3UsePathStyle,
 			)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error mounting S3 bucket: %v\n", err)
+				slog.ErrorContext(ctx, "Error mounting S3 bucket", "bucket", s3Bucket, "path", repositoriesDir, "error", err)
 				os.Exit(1)
 			}
 			defer func() {
-				slog.Info("Unmounting S3 bucket", "path", repositoriesDir)
+				slog.InfoContext(ctx, "Unmounting S3 bucket", "path", repositoriesDir)
 				if err := s3fs.Unmount(context.Background(), repositoriesDir); err != nil {
-					fmt.Fprintf(os.Stderr, "Error unmounting S3 bucket: %v\n", err)
+					slog.ErrorContext(ctx, "Error unmounting S3 bucket", "path", repositoriesDir, "error", err)
 				}
 			}()
 		}
@@ -141,7 +142,7 @@ func main() {
 	var mirrorSourceFunc repository.MirrorSourceFunc
 	var lfsTeeCache *lfs.TeeCache
 	if proxyURL != "" {
-		slog.Info("Proxy mode enabled", "source", proxyURL)
+		slog.InfoContext(ctx, "Proxy mode enabled", "source", proxyURL)
 		mirrorSourceFunc = repository.NewMirrorSourceFunc(proxyURL)
 		lfsTeeCache = lfs.NewTeeCache(
 			utils.HTTPClient,
@@ -151,14 +152,14 @@ func main() {
 
 	permissionHook := func(ctx context.Context, op permission.Operation, repoPath string, opCtx permission.Context) error {
 		userInfo, _ := authenticate.GetUserInfo(ctx)
-		slog.Info("Permission check", "user", userInfo.User, "op", op, "repo", repoPath, "context", opCtx)
+		slog.InfoContext(ctx, "Permission check", "user", userInfo.User, "op", op, "repo", repoPath, "context", opCtx)
 		return nil // or return an error to deny permission
 	}
 
 	preReceiveHook := func(ctx context.Context, repoName string, updates []receive.RefUpdate) error {
 		userInfo, _ := authenticate.GetUserInfo(ctx)
 		for _, e := range updates {
-			slog.Info("Pre-receive hook", "user", userInfo.User, "repo", repoName, "event", e.String(),
+			slog.InfoContext(ctx, "Pre-receive hook", "user", userInfo.User, "repo", repoName, "event", e.String(),
 				"ref", e.RefName, "old", e.OldRev, "new", e.NewRev)
 		}
 		return nil // or return an error to deny the push
@@ -167,7 +168,7 @@ func main() {
 	postReceiveHook := func(ctx context.Context, repoName string, updates []receive.RefUpdate) error {
 		userInfo, _ := authenticate.GetUserInfo(ctx)
 		for _, e := range updates {
-			slog.Info("Post-receive hook", "user", userInfo.User, "repo", repoName, "event", e.String(),
+			slog.InfoContext(ctx, "Post-receive hook", "user", userInfo.User, "repo", repoName, "event", e.String(),
 				"ref", e.RefName, "old", e.OldRev, "new", e.NewRev)
 		}
 		return nil
@@ -190,18 +191,18 @@ func main() {
 		var authorizedKeys [][]byte
 		authKeysData, err := os.ReadFile(sshAuthorizedKey)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading SSH authorized keys file: %v\n", err)
+			slog.ErrorContext(ctx, "Error reading SSH authorized keys file", "path", sshAuthorizedKey, "error", err)
 			os.Exit(1)
 		}
 		parsedKeys, err := pkgssh.ParseAuthorizedKeys(authKeysData)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing SSH authorized keys: %v\n", err)
+			slog.ErrorContext(ctx, "Error parsing SSH authorized keys", "path", sshAuthorizedKey, "error", err)
 			os.Exit(1)
 		}
 		for _, k := range parsedKeys {
 			authorizedKeys = append(authorizedKeys, k.Marshal())
 		}
-		slog.Info("Loaded SSH authorized keys", "count", len(parsedKeys))
+		slog.InfoContext(ctx, "Loaded SSH authorized keys", "count", len(parsedKeys))
 		publicKeyValidator = authenticate.NewSimplePublicKeyValidator(authorizedKeys)
 	}
 
@@ -251,20 +252,20 @@ func main() {
 		if err == nil {
 			hostKeySigner, err = pkgssh.ParseHostKeyFile(data)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing SSH host key file: %v\n", err)
+				slog.ErrorContext(ctx, "Error parsing SSH host key file", "path", hostKeyPath, "error", err)
 				os.Exit(1)
 			}
-			slog.Info("Loaded SSH host key", "path", hostKeyPath)
+			slog.InfoContext(ctx, "Loaded SSH host key", "path", hostKeyPath)
 		} else if sshHostKeyFile != "" || !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Error reading SSH host key file: %v\n", err)
+			slog.ErrorContext(ctx, "Error reading SSH host key file", "path", hostKeyPath, "error", err)
 			os.Exit(1)
 		} else {
 			hostKeySigner, err = pkgssh.GenerateAndSaveHostKey(hostKeyPath, pkgssh.KeyTypeRSA)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error generating SSH host key: %v\n", err)
+				slog.ErrorContext(ctx, "Error generating SSH host key", "path", hostKeyPath, "error", err)
 				os.Exit(1)
 			}
-			slog.Info("Generated SSH host key", "path", hostKeyPath)
+			slog.InfoContext(ctx, "Generated SSH host key", "path", hostKeyPath)
 		}
 		sshOpts := []backendssh.Option{
 			backendssh.WithPermissionHookFunc(permissionHook),
@@ -278,10 +279,10 @@ func main() {
 		}
 
 		sshServer := backendssh.NewServer(storage.RepositoriesDir(), hostKeySigner, sshOpts...)
-		slog.Info("Starting SSH protocol server", "addr", sshAddr)
+		slog.InfoContext(ctx, "Starting SSH protocol server", "addr", sshAddr)
 		go func() {
-			if err := sshServer.ListenAndServe(sshAddr); err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting SSH protocol server on %s: %v\n", sshAddr, err)
+			if err := sshServer.ListenAndServe(ctx, sshAddr); err != nil {
+				slog.ErrorContext(ctx, "Error starting SSH protocol server", "addr", sshAddr, "error", err)
 				os.Exit(1)
 			}
 		}()
@@ -289,7 +290,7 @@ func main() {
 
 	handler = handlers.CombinedLoggingHandler(os.Stderr, handler)
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
+		slog.ErrorContext(ctx, "Error starting server", "error", err)
 		os.Exit(1)
 	}
 }

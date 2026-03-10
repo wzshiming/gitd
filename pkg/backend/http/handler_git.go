@@ -169,7 +169,7 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 
 	if service == repository.GitReceivePack && h.postReceiveHook != nil && len(updates) > 0 {
 		if hookErr := h.postReceiveHook(r.Context(), repoName, updates); hookErr != nil {
-			slog.Warn("post-receive hook error", "repo", repoName, "error", hookErr)
+			slog.WarnContext(r.Context(), "post-receive hook error", "repo", repoName, "error", hookErr)
 		}
 	}
 }

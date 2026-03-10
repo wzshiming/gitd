@@ -37,18 +37,10 @@ type Server struct {
 	postReceiveHook    receive.PostReceiveHook
 	tokenSignValidator authenticate.TokenSignValidator
 	lfsURL             string
-	logger             *slog.Logger
 }
 
 // Option configures the SSH server.
 type Option func(*Server)
-
-// WithLogger sets the logger for the SSH server.
-func WithLogger(logger *slog.Logger) Option {
-	return func(s *Server) {
-		s.logger = logger
-	}
-}
 
 // WithPublicKeyCallback sets the public key authentication callback for the SSH server.
 func WithPublicKeyCallback(callback func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error)) Option {
@@ -166,7 +158,6 @@ func NewServer(repositoriesDir string, hostKey ssh.Signer, opts ...Option) *Serv
 	s := &Server{
 		repositoriesDir: repositoriesDir,
 		config:          config,
-		logger:          slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -192,33 +183,34 @@ func AuthorizedKeysCallback(authorizedKeys []ssh.PublicKey) func(conn ssh.ConnMe
 }
 
 // Serve accepts connections on the listener and handles them.
-func (s *Server) Serve(listener net.Listener) error {
+func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return err
 		}
-		go s.handleConnection(conn)
+		go s.handleConnection(ctx, conn)
 	}
 }
 
 // ListenAndServe listens on the given address and serves SSH protocol requests.
-func (s *Server) ListenAndServe(addr string) error {
-	listener, err := net.Listen("tcp", addr)
+func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	return s.Serve(listener)
+	return s.Serve(ctx, listener)
 }
 
 // handleConnection handles a single SSH connection.
-func (s *Server) handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	serverConn, chans, reqs, err := ssh.NewServerConn(conn, s.config)
 	if err != nil {
-		s.logger.Warn("ssh protocol: handshake failed", "error", err)
+		slog.WarnContext(ctx, "ssh protocol: handshake failed", "error", err)
 		return
 	}
 	defer serverConn.Close()
@@ -227,7 +219,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	go ssh.DiscardRequests(reqs)
 
 	user := getUserFromPermissions(serverConn.Permissions)
-	ctx := authenticate.WithContext(context.Background(), authenticate.UserInfo{User: user})
+	ctx = authenticate.WithContext(ctx, authenticate.UserInfo{User: user})
 
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
@@ -237,7 +229,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
-			s.logger.Error("ssh protocol: could not accept channel", "error", err)
+			slog.ErrorContext(ctx, "ssh protocol: could not accept channel", "error", err)
 			return
 		}
 
@@ -281,7 +273,7 @@ func (s *Server) handleSession(ctx context.Context, channel ssh.Channel, request
 
 			cmd, err := parseCommand(cmdLine)
 			if err != nil {
-				s.logger.Error("ssh protocol: invalid command", "error", err)
+				slog.ErrorContext(ctx, "ssh protocol: invalid command", "error", err)
 				_ = req.Reply(false, nil)
 				continue
 			}
@@ -292,7 +284,7 @@ func (s *Server) handleSession(ctx context.Context, channel ssh.Channel, request
 			case repository.GitLFSAuthenticate:
 				s.executeLFSAuthenticate(ctx, channel, cmd.repoPath, cmd.operation)
 			case repository.GitLFSTransfer:
-				s.logger.Warn("ssh protocol: git-lfs-transfer is not supported, clients should fall back to git-lfs-authenticate")
+				slog.WarnContext(ctx, "ssh protocol: git-lfs-transfer is not supported, clients should fall back to git-lfs-authenticate")
 				_, _ = fmt.Fprintf(channel.Stderr(), "git-lfs-transfer is not supported\n")
 				sendExitStatus(channel, 1)
 			default:
@@ -315,7 +307,7 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 
 	fullPath := repository.ResolvePath(s.repositoriesDir, repoPath)
 	if fullPath == "" {
-		s.logger.Error("ssh protocol: repository not found", "repo", repoPath)
+		slog.ErrorContext(ctx, "ssh protocol: repository not found", "repo", repoPath)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -326,7 +318,7 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 			op = permission.OperationUpdateRepo
 		}
 		if err := s.permissionHook(ctx, op, repoPath, permission.Context{}); err != nil {
-			s.logger.Warn("ssh protocol: auth hook denied", "service", service, "repo", repoPath, "error", err)
+			slog.WarnContext(ctx, "ssh protocol: auth hook denied", "service", service, "repo", repoPath, "error", err)
 			sendExitStatus(channel, 1)
 			return
 		}
@@ -334,7 +326,7 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 
 	repo, err := s.openRepo(ctx, fullPath, repoPath, service)
 	if err != nil {
-		s.logger.Error("ssh protocol: repository not found", "repo", repoPath)
+		slog.ErrorContext(ctx, "ssh protocol: repository not found", "repo", repoPath)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -342,12 +334,12 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 	if service == repository.GitReceivePack {
 		isMirror, _, err := repo.IsMirror()
 		if err != nil {
-			s.logger.Error("ssh protocol: failed to check repository type", "error", err)
+			slog.ErrorContext(ctx, "ssh protocol: failed to check repository type", "error", err)
 			sendExitStatus(channel, 1)
 			return
 		}
 		if isMirror {
-			s.logger.Warn("ssh protocol: push to mirror repository is not allowed", "repo", repoPath)
+			slog.WarnContext(ctx, "ssh protocol: push to mirror repository is not allowed", "repo", repoPath)
 			sendExitStatus(channel, 1)
 			return
 		}
@@ -369,7 +361,7 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 	}
 
 	if err := cmd.Run(); err != nil {
-		s.logger.Error("ssh protocol: command failed", "service", service, "error", err)
+		slog.ErrorContext(ctx, "ssh protocol: command failed", "service", service, "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -403,7 +395,7 @@ func (s *Server) executeReceivePackWithHooks(ctx context.Context, channel ssh.Ch
 
 	if err := cmd.Start(); err != nil {
 		pw.Close()
-		s.logger.Error("ssh protocol: command start failed", "service", service, "error", err)
+		slog.ErrorContext(ctx, "ssh protocol: command start failed", "service", service, "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -416,7 +408,7 @@ func (s *Server) executeReceivePackWithHooks(ctx context.Context, channel ssh.Ch
 	// Pre-receive hook — can reject the push before pack data is processed.
 	if s.preReceiveHook != nil && len(updates) > 0 {
 		if err := s.preReceiveHook(ctx, repoPath, updates); err != nil {
-			s.logger.Warn("ssh protocol: pre-receive hook denied push", "repo", repoPath, "error", err)
+			slog.WarnContext(ctx, "ssh protocol: pre-receive hook denied push", "repo", repoPath, "error", err)
 			cmd.Process.Kill()
 			pw.Close()
 			_ = cmd.Wait() // expected error: process was killed
@@ -430,12 +422,12 @@ func (s *Server) executeReceivePackWithHooks(ctx context.Context, channel ssh.Ch
 	go func() {
 		defer pw.Close()
 		if _, err := io.Copy(pw, replay); err != nil {
-			s.logger.Warn("ssh protocol: error forwarding data to receive-pack", "repo", repoPath, "error", err)
+			slog.WarnContext(ctx, "ssh protocol: error forwarding data to receive-pack", "repo", repoPath, "error", err)
 		}
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		s.logger.Error("ssh protocol: command failed", "service", service, "error", err)
+		slog.ErrorContext(ctx, "ssh protocol: command failed", "service", service, "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -443,7 +435,7 @@ func (s *Server) executeReceivePackWithHooks(ctx context.Context, channel ssh.Ch
 	// Fire post-receive hook with the ref updates.
 	if s.postReceiveHook != nil && len(updates) > 0 {
 		if hookErr := s.postReceiveHook(ctx, repoPath, updates); hookErr != nil {
-			s.logger.Warn("ssh protocol: post-receive hook error", "repo", repoPath, "error", hookErr)
+			slog.WarnContext(ctx, "ssh protocol: post-receive hook error", "repo", repoPath, "error", hookErr)
 		}
 	}
 
@@ -541,7 +533,7 @@ func (s *Server) executeLFSAuthenticate(ctx context.Context, channel ssh.Channel
 	}
 
 	if operation != "download" && operation != "upload" {
-		s.logger.Error("ssh protocol: git-lfs-authenticate: invalid operation", "operation", operation)
+		slog.ErrorContext(ctx, "ssh protocol: git-lfs-authenticate: invalid operation", "operation", operation)
 		_, _ = fmt.Fprintf(channel.Stderr(), "invalid LFS operation: %s\n", operation)
 		sendExitStatus(channel, 1)
 		return
@@ -549,7 +541,7 @@ func (s *Server) executeLFSAuthenticate(ctx context.Context, channel ssh.Channel
 
 	fullPath := repository.ResolvePath(s.repositoriesDir, repoPath)
 	if fullPath == "" {
-		s.logger.Error("ssh protocol: repository not found", "repo", repoPath)
+		slog.ErrorContext(ctx, "ssh protocol: repository not found", "repo", repoPath)
 		sendExitStatus(channel, 1)
 		return
 	}
@@ -560,7 +552,7 @@ func (s *Server) executeLFSAuthenticate(ctx context.Context, channel ssh.Channel
 			op = permission.OperationUpdateRepo
 		}
 		if err := s.permissionHook(ctx, op, repoPath, permission.Context{}); err != nil {
-			s.logger.Warn("ssh protocol: auth hook denied lfs operation", "operation", operation, "repo", repoPath, "error", err)
+			slog.WarnContext(ctx, "ssh protocol: auth hook denied lfs operation", "operation", operation, "repo", repoPath, "error", err)
 			sendExitStatus(channel, 1)
 			return
 		}
@@ -587,13 +579,13 @@ func (s *Server) executeLFSAuthenticate(ctx context.Context, channel ssh.Channel
 
 	data, err := json.Marshal(resp)
 	if err != nil {
-		s.logger.Error("ssh protocol: failed to marshal LFS auth response", "error", err)
+		slog.ErrorContext(ctx, "ssh protocol: failed to marshal LFS auth response", "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}
 
 	if _, err := channel.Write(data); err != nil {
-		s.logger.Error("ssh protocol: failed to write LFS auth response", "error", err)
+		slog.ErrorContext(ctx, "ssh protocol: failed to write LFS auth response", "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}

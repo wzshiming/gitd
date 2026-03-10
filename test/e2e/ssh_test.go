@@ -80,7 +80,7 @@ func setupSSHTestServer(t *testing.T, authorizedKeys []ssh.PublicKey) (*httptest
 	t.Cleanup(func() { listener.Close() })
 
 	go func() {
-		_ = sshServer.Serve(listener)
+		_ = sshServer.Serve(t.Context(), listener)
 	}()
 
 	return httpServer, listener, dataDir

@@ -78,7 +78,7 @@ func TestSSHProtocolServer(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().(*net.TCPAddr)
@@ -250,7 +250,7 @@ func TestSSHPublicKeyAuth(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().(*net.TCPAddr)
@@ -412,7 +412,7 @@ func TestSSHLFSAuthenticate(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().String()
@@ -550,7 +550,7 @@ func TestSSHLFSAuthenticateNoHTTPURL(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().String()
@@ -621,7 +621,7 @@ func TestSSHPasswordAuth(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().(*net.TCPAddr)
@@ -712,7 +712,7 @@ func TestSSHPublicKeyAuthViaAuthenticator(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().(*net.TCPAddr)
@@ -801,7 +801,7 @@ func TestSSHLFSAuthenticateWithAuthenticator(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(t.Context(), listener)
 	}()
 
 	addr := listener.Addr().String()

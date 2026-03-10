@@ -98,7 +98,7 @@ func setupSSHProxyServer(t *testing.T, upstreamURL string) (net.Listener, string
 	t.Cleanup(func() { listener.Close() })
 
 	go func() {
-		_ = sshServer.Serve(listener)
+		_ = sshServer.Serve(t.Context(), listener)
 	}()
 
 	return listener, dataDir
