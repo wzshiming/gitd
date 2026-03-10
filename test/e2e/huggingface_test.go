@@ -83,250 +83,125 @@ func runHFCmdMayFail(t *testing.T, endpoint string, args ...string) (string, err
 	return string(output), err
 }
 
-func TestHuggingFaceUploadWithHFCLI(t *testing.T) {
+func TestHuggingFaceUploadAndDownloadMatrix(t *testing.T) {
 	if _, err := exec.LookPath("hf"); err != nil {
-		t.Skip("hf CLI not available, skipping HF CLI upload test")
+		t.Skip("hf CLI not available, skipping HF CLI matrix test")
 	}
 
 	server, _ := setupTestServer(t)
 	endpoint := server.URL
 
-	uploadDir, err := os.MkdirTemp("", "hf-upload-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(uploadDir)
-
-	if err := os.WriteFile(filepath.Join(uploadDir, "test.txt"), []byte("Hello from HF CLI\n"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(uploadDir, "README.md"), []byte("# HF CLI Test\n"), 0644); err != nil {
-		t.Fatalf("Failed to create README: %v", err)
-	}
-
-	// Run hf upload
-	runHFCmd(t, endpoint, "upload", "test-user/hf-cli-model", uploadDir, ".", "--commit-message", "Upload via HF CLI")
-
-	// Verify the uploaded files via HTTP
-	for _, file := range []struct {
+	type file struct {
 		path    string
 		content string
+	}
+
+	testCases := []struct {
+		name          string
+		repoID        string
+		resolvePrefix string
+		uploadArgs    []string
+		downloadArgs  []string
+		files         []file
 	}{
-		{"test.txt", "Hello from HF CLI\n"},
-		{"README.md", "# HF CLI Test\n"},
-	} {
-		func() {
-			resp, err := http.Get(endpoint + "/test-user/hf-cli-model/resolve/main/" + file.path)
+		{
+			name:   "model",
+			repoID: "matrix-user/hf-cli-model",
+			files: []file{
+				{"test.txt", "Hello from HF CLI\n"},
+				{"README.md", "# HF CLI Test\n"},
+				{"data/config.json", "{\"key\": \"value\"}\n"},
+			},
+			uploadArgs:   []string{"--commit-message", "Upload via HF CLI"},
+			downloadArgs: nil,
+		},
+		{
+			name:          "dataset",
+			repoID:        "matrix-user/my-dataset",
+			resolvePrefix: "/datasets",
+			files: []file{
+				{"README.md", "# Test Dataset\n"},
+				{"data.csv", "col1,col2\na,b\n"},
+			},
+			uploadArgs:   []string{"--repo-type", "dataset", "--commit-message", "Upload dataset"},
+			downloadArgs: []string{"--repo-type", "dataset"},
+		},
+		{
+			name:          "space",
+			repoID:        "matrix-user/my-space",
+			resolvePrefix: "/spaces",
+			files: []file{
+				{"README.md", "# Test Space\n"},
+				{"app.py", "import gradio as gr\n"},
+			},
+			uploadArgs:   []string{"--repo-type", "space", "--commit-message", "Upload space"},
+			downloadArgs: []string{"--repo-type", "space"},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			uploadDir, err := os.MkdirTemp("", "hf-matrix-upload-"+tc.name)
 			if err != nil {
-				t.Fatalf("Failed to get %s: %v", file.path, err)
+				t.Fatalf("Failed to create temp dir: %v", err)
 			}
-			defer resp.Body.Close()
+			defer os.RemoveAll(uploadDir)
 
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("Expected 200 for %s, got %d", file.path, resp.StatusCode)
+			for _, file := range tc.files {
+				filePath := filepath.Join(uploadDir, file.path)
+				if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+					t.Fatalf("Failed to create dir for %s: %v", file.path, err)
+				}
+				if err := os.WriteFile(filePath, []byte(file.content), 0644); err != nil {
+					t.Fatalf("Failed to create %s: %v", file.path, err)
+				}
 			}
 
-			content, _ := os.ReadFile(filepath.Join(uploadDir, file.path))
-			if string(content) != file.content {
-				t.Errorf("Unexpected content for %s: %q, want %q", file.path, content, file.content)
+			args := []string{"upload", tc.repoID, uploadDir, "."}
+			args = append(args, tc.uploadArgs...)
+			runHFCmd(t, endpoint, args...)
+
+			for _, file := range tc.files {
+				resp, err := http.Get(endpoint + tc.resolvePrefix + "/" + tc.repoID + "/resolve/main/" + file.path)
+				if err != nil {
+					t.Fatalf("Failed to get %s: %v", file.path, err)
+				}
+
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("Expected 200 for %s, got %d", file.path, resp.StatusCode)
+				}
+
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					t.Fatalf("Failed to read %s: %v", file.path, err)
+				}
+				if string(body) != file.content {
+					t.Errorf("Unexpected content for %s: got %q, want %q", file.path, body, file.content)
+				}
 			}
-		}()
-	}
-}
 
-func TestHuggingFaceDownloadWithHFCLI(t *testing.T) {
-	if _, err := exec.LookPath("hf"); err != nil {
-		t.Skip("hf CLI not available, skipping HF CLI download test")
-	}
-
-	server, _ := setupTestServer(t)
-	endpoint := server.URL
-
-	// Upload files first
-	uploadDir, err := os.MkdirTemp("", "hf-upload-for-download")
-	if err != nil {
-		t.Fatalf("Failed to create upload dir: %v", err)
-	}
-	defer os.RemoveAll(uploadDir)
-
-	testFiles := []struct {
-		path    string
-		content string
-	}{
-		{"test.txt", "Hello from HF download test\n"},
-		{"README.md", "# HF Download Test\n"},
-		{"data/config.json", "{\"key\": \"value\"}\n"},
-	}
-	for _, file := range testFiles {
-		filePath := filepath.Join(uploadDir, file.path)
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-			t.Fatalf("Failed to create dir for %s: %v", file.path, err)
-		}
-		if err := os.WriteFile(filePath, []byte(file.content), 0644); err != nil {
-			t.Fatalf("Failed to create %s: %v", file.path, err)
-		}
-	}
-
-	runHFCmd(t, endpoint, "upload", "test-user/dl-model", uploadDir, ".", "--commit-message", "Upload for download test")
-
-	// Download files using hf download
-	downloadDir, err := os.MkdirTemp("", "hf-download-test")
-	if err != nil {
-		t.Fatalf("Failed to create download dir: %v", err)
-	}
-	defer os.RemoveAll(downloadDir)
-
-	runHFCmd(t, endpoint, "download", "test-user/dl-model", "--local-dir", downloadDir)
-
-	// Verify downloaded files match uploaded files
-	for _, file := range testFiles {
-		content, err := os.ReadFile(filepath.Join(downloadDir, file.path))
-		if err != nil {
-			t.Fatalf("Failed to read downloaded %s: %v", file.path, err)
-		}
-		if string(content) != file.content {
-			t.Errorf("Downloaded content mismatch for %s: got %q, want %q", file.path, content, file.content)
-		}
-	}
-}
-
-func TestHuggingFaceDatasetUploadAndDownload(t *testing.T) {
-	if _, err := exec.LookPath("hf"); err != nil {
-		t.Skip("hf CLI not available, skipping HF CLI dataset test")
-	}
-
-	server, _ := setupTestServer(t)
-	endpoint := server.URL
-
-	uploadDir, err := os.MkdirTemp("", "hf-dataset-upload")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(uploadDir)
-
-	testFiles := []struct {
-		path    string
-		content string
-	}{
-		{"README.md", "# Test Dataset\n"},
-		{"data.csv", "col1,col2\na,b\n"},
-	}
-	for _, file := range testFiles {
-		filePath := filepath.Join(uploadDir, file.path)
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-			t.Fatalf("Failed to create dir for %s: %v", file.path, err)
-		}
-		if err := os.WriteFile(filePath, []byte(file.content), 0644); err != nil {
-			t.Fatalf("Failed to create %s: %v", file.path, err)
-		}
-	}
-
-	// Upload as dataset
-	runHFCmd(t, endpoint, "upload", "test-user/my-dataset", uploadDir, ".", "--repo-type", "dataset", "--commit-message", "Upload dataset")
-
-	// Verify files via HTTP using datasets resolve endpoint
-	for _, file := range testFiles {
-		func() {
-			resp, err := http.Get(endpoint + "/datasets/test-user/my-dataset/resolve/main/" + file.path)
+			downloadDir, err := os.MkdirTemp("", "hf-matrix-download-"+tc.name)
 			if err != nil {
-				t.Fatalf("Failed to get %s: %v", file.path, err)
+				t.Fatalf("Failed to create download dir: %v", err)
 			}
-			defer resp.Body.Close()
+			defer os.RemoveAll(downloadDir)
 
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("Expected 200 for %s, got %d", file.path, resp.StatusCode)
+			downloadArgs := []string{"download", tc.repoID, "--local-dir", downloadDir}
+			downloadArgs = append(downloadArgs, tc.downloadArgs...)
+			runHFCmd(t, endpoint, downloadArgs...)
+
+			for _, file := range tc.files {
+				content, err := os.ReadFile(filepath.Join(downloadDir, file.path))
+				if err != nil {
+					t.Fatalf("Failed to read downloaded %s: %v", file.path, err)
+				}
+				if string(content) != file.content {
+					t.Errorf("Downloaded content mismatch for %s: got %q, want %q", file.path, content, file.content)
+				}
 			}
-		}()
-	}
-
-	// Download as dataset
-	downloadDir, err := os.MkdirTemp("", "hf-dataset-download")
-	if err != nil {
-		t.Fatalf("Failed to create download dir: %v", err)
-	}
-	defer os.RemoveAll(downloadDir)
-
-	runHFCmd(t, endpoint, "download", "test-user/my-dataset", "--repo-type", "dataset", "--local-dir", downloadDir)
-
-	// Verify downloaded files match uploaded files
-	for _, file := range testFiles {
-		content, err := os.ReadFile(filepath.Join(downloadDir, file.path))
-		if err != nil {
-			t.Fatalf("Failed to read downloaded %s: %v", file.path, err)
-		}
-		if string(content) != file.content {
-			t.Errorf("Downloaded content mismatch for %s: got %q, want %q", file.path, content, file.content)
-		}
-	}
-}
-
-func TestHuggingFaceSpaceUploadAndDownload(t *testing.T) {
-	if _, err := exec.LookPath("hf"); err != nil {
-		t.Skip("hf CLI not available, skipping HF CLI space test")
-	}
-
-	server, _ := setupTestServer(t)
-	endpoint := server.URL
-
-	uploadDir, err := os.MkdirTemp("", "hf-space-upload")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(uploadDir)
-
-	testFiles := []struct {
-		path    string
-		content string
-	}{
-		{"README.md", "# Test Space\n"},
-		{"app.py", "import gradio as gr\n"},
-	}
-	for _, file := range testFiles {
-		filePath := filepath.Join(uploadDir, file.path)
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-			t.Fatalf("Failed to create dir for %s: %v", file.path, err)
-		}
-		if err := os.WriteFile(filePath, []byte(file.content), 0644); err != nil {
-			t.Fatalf("Failed to create %s: %v", file.path, err)
-		}
-	}
-
-	// Upload as space
-	runHFCmd(t, endpoint, "upload", "test-user/my-space", uploadDir, ".", "--repo-type", "space", "--commit-message", "Upload space")
-
-	// Verify files via HTTP using spaces resolve endpoint
-	for _, file := range testFiles {
-		func() {
-			resp, err := http.Get(endpoint + "/spaces/test-user/my-space/resolve/main/" + file.path)
-			if err != nil {
-				t.Fatalf("Failed to get %s: %v", file.path, err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("Expected 200 for %s, got %d", file.path, resp.StatusCode)
-			}
-		}()
-	}
-
-	// Download as space
-	downloadDir, err := os.MkdirTemp("", "hf-space-download")
-	if err != nil {
-		t.Fatalf("Failed to create download dir: %v", err)
-	}
-	defer os.RemoveAll(downloadDir)
-
-	runHFCmd(t, endpoint, "download", "test-user/my-space", "--repo-type", "space", "--local-dir", downloadDir)
-
-	// Verify downloaded files match uploaded files
-	for _, file := range testFiles {
-		content, err := os.ReadFile(filepath.Join(downloadDir, file.path))
-		if err != nil {
-			t.Fatalf("Failed to read downloaded %s: %v", file.path, err)
-		}
-		if string(content) != file.content {
-			t.Errorf("Downloaded content mismatch for %s: got %q, want %q", file.path, content, file.content)
-		}
+		})
 	}
 }
 
