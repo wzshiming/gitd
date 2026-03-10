@@ -49,20 +49,10 @@ func InitMirror(ctx context.Context, repoPath string, sourceURL string) (*Reposi
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
 
-	err = repo.shallowFetch(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to perform initial shallow fetch: %w", err)
-	}
-
-	err = repo.SyncMirror(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sync mirror: %w", err)
-	}
-
 	return repo, nil
 }
 
-func (r *Repository) shallowFetch(ctx context.Context) error {
+func (r *Repository) ShallowSyncMirror(ctx context.Context) error {
 	args := []string{
 		"fetch",
 		"--depth=1",
