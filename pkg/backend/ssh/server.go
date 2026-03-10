@@ -447,7 +447,7 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	repo, err := repository.Open(repoPath)
 	if err == nil {
 		if mirror, _, err := repo.IsMirror(); err == nil && mirror {
-			err = s.syncMirrorWithHook(ctx, repo, repoName)
+			err = s.syncMirror(ctx, repo, repoName, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to sync mirror: %w", err)
 			}
@@ -473,7 +473,7 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 			_ = os.RemoveAll(repoPath)
 			return nil, repository.ErrRepositoryNotExists
 		}
-		err = s.syncMirrorWithHook(ctx, repo, repoName)
+		err = s.syncMirror(ctx, repo, repoName, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to sync mirror: %w", err)
 		}
@@ -482,10 +482,10 @@ func (s *Server) openRepo(ctx context.Context, repoPath, repoName, service strin
 	return nil, err
 }
 
-// syncMirrorWithHook syncs a mirror and fires post-receive hooks for any ref changes.
-func (s *Server) syncMirrorWithHook(ctx context.Context, repo *repository.Repository, repoName string) error {
+// syncMirror syncs a mirror and fires post-receive hooks for any ref changes.
+func (s *Server) syncMirror(ctx context.Context, repo *repository.Repository, repoName string, first bool) error {
 	var before map[string]string
-	if s.postReceiveHook != nil {
+	if s.postReceiveHook != nil && !first {
 		before, _ = repo.Refs()
 	}
 
