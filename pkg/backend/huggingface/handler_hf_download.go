@@ -1,7 +1,6 @@
 package huggingface
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -207,42 +206,23 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Repo-Commit", commitHash)
 				w.Header().Set("ETag", fmt.Sprintf("\"%s\"", ptr.OID()))
 
-				if !h.lfsStore.Exists(ptr.OID()) {
+				if h.mirror != nil && !h.lfsStore.Exists(ptr.OID()) {
 					// Try tee cache fetch if configured
-					if h.lfsTeeCache != nil {
-						proxyAllowed := true
-						if h.permissionHookFunc != nil {
-							if err := h.permissionHookFunc(r.Context(), permission.OperationCreateProxyRepo, ri.RepoName, permission.Context{}); err != nil {
-								proxyAllowed = false
-							}
+					if h.mirror != nil {
+						sourceURL, started, err := h.mirror.StartLFSFetch(r.Context(), ri.RepoName, []lfs.LFSObject{
+							{Oid: ptr.OID(), Size: ptr.Size()},
+						})
+						if err != nil {
+							responseJSON(w, fmt.Errorf("failed to fetch LFS object %q from upstream source %q: %v", ptr.OID(), sourceURL, err), http.StatusInternalServerError)
+							return
 						}
-						sourceURL := h.getProxySourceURL(r.Context(), ri.RepoName)
-						if sourceURL != "" && proxyAllowed {
-							err = h.lfsTeeCache.StartFetch(context.Background(), sourceURL, []lfs.LFSObject{
-								{Oid: ptr.OID(), Size: ptr.Size()},
-							})
-							if err != nil {
-								responseJSON(w, fmt.Errorf("failed to fetch LFS object %q from upstream source %q: %v", ptr.OID(), sourceURL, err), http.StatusInternalServerError)
-								return
-							}
 
-							pf := h.lfsTeeCache.Get(ptr.OID())
-							// TODO(@wzshiming) We should ideally have a better way to wait for the proxy fetch to complete instead of polling like this,
-							// but this is good enough for now since the client will retry if the file is not ready yet.
-							for i := 0; i != 5; i++ {
-								time.Sleep(500 * time.Millisecond)
-								pf = h.lfsTeeCache.Get(ptr.OID())
-								if pf != nil {
-									break
-								}
-							}
-
-							if pf != nil {
-								rs := pf.NewReadSeeker()
-								defer rs.Close()
-								http.ServeContent(w, r, ptr.OID(), time.Now(), rs)
-								return
-							}
+						if started {
+							pf := h.mirror.Get(ptr.OID())
+							rs := pf.NewReadSeeker()
+							defer rs.Close()
+							http.ServeContent(w, r, ptr.OID(), time.Now(), rs)
+							return
 						}
 					}
 					responseJSON(w, fmt.Errorf("LFS object %q not found for file %q in repository %q at revision %q", ptr.OID(), path, ri.RepoName, rev), http.StatusNotFound)
@@ -309,18 +289,4 @@ func (h *Handler) handleResolve(w http.ResponseWriter, r *http.Request) {
 		// Log but don't send error - we may have already written partial content
 		return
 	}
-}
-
-// getProxySourceURL returns the mirror source URL for the given repository if it is configured as a mirror and the URL is valid, otherwise returns an empty string.
-func (h *Handler) getProxySourceURL(ctx context.Context, repoName string) string {
-	if h.mirrorSourceFunc == nil {
-		return ""
-	}
-
-	sourceURL, isMirror, err := h.mirrorSourceFunc(ctx, repoName)
-	if err != nil || !isMirror || sourceURL == "" {
-		return ""
-	}
-
-	return sourceURL
 }
