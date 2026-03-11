@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -40,23 +42,23 @@ func GetUserInfo(ctx context.Context) (UserInfo, bool) {
 
 // BasicAuthValidator validates username/password credentials.
 type BasicAuthValidator interface {
-	Validate(ctx context.Context, username, password string) (user string, next, ok bool)
+	Validate(ctx context.Context, username, password string) (user string, next, ok bool, err error)
 }
 
 // TokenValidator validates a bearer token.
 type TokenValidator interface {
-	Validate(ctx context.Context, token string) (user string, next, ok bool)
+	Validate(ctx context.Context, token string) (user string, next, ok bool, err error)
 }
 
 // PublicKeyValidator validates an SSH public key.
 type PublicKeyValidator interface {
-	Validate(ctx context.Context, username string, keyType string, marshaledKey []byte) (user string, next, ok bool)
+	Validate(ctx context.Context, username string, keyType string, marshaledKey []byte) (user string, next, ok bool, err error)
 }
 
 // TokenSignValidator is an interface for signing and validating tokens.
 type TokenSignValidator interface {
-	Sign(ctx context.Context, method, path string, username string, expiration time.Duration) (token string)
-	Validate(ctx context.Context, method, path string, token string) (user string, next, ok bool)
+	Sign(ctx context.Context, method, path string, username string, expiration time.Duration) (token string, err error)
+	Validate(ctx context.Context, method, path string, token string) (user string, next, ok bool, err error)
 }
 
 // simpleBasicAuthValidator implements BasicAuthValidator with in-memory credentials.
@@ -73,13 +75,13 @@ func NewSimpleBasicAuthValidator(username, password string) BasicAuthValidator {
 	}
 }
 
-func (a *simpleBasicAuthValidator) Validate(_ context.Context, username, password string) (string, bool, bool) {
+func (a *simpleBasicAuthValidator) Validate(_ context.Context, username, password string) (string, bool, bool, error) {
 	if a.username != "" &&
 		username == a.username &&
 		password == a.password {
-		return username, false, true
+		return username, false, true, nil
 	}
-	return "", false, false
+	return "", false, false, nil
 }
 
 // simplePublicKeyValidator implements PublicKeyValidator with in-memory authorized keys.
@@ -98,11 +100,11 @@ func NewSimplePublicKeyValidator(authorizedKeys [][]byte) PublicKeyValidator {
 	}
 }
 
-func (a *simplePublicKeyValidator) Validate(_ context.Context, username string, keyType string, marshaledKey []byte) (string, bool, bool) {
+func (a *simplePublicKeyValidator) Validate(_ context.Context, username string, keyType string, marshaledKey []byte) (string, bool, bool, error) {
 	if a.authorizedKeys[string(marshaledKey)] {
-		return username, false, true
+		return username, false, true, nil
 	}
-	return "", false, false
+	return "", false, false, nil
 }
 
 // simpleTokenValidator implements TokenValidator with a static token.
@@ -119,20 +121,20 @@ func NewSimpleTokenValidator(username string, token string) TokenValidator {
 	}
 }
 
-func (a *simpleTokenValidator) Validate(_ context.Context, token string) (string, bool, bool) {
+func (a *simpleTokenValidator) Validate(_ context.Context, token string) (string, bool, bool, error) {
 	if a.token == "" {
-		return "", true, false
+		return "", true, false, nil
 	}
 
 	if strings.HasPrefix(token, signedTokenPrefix) {
-		return "", true, false
+		return "", true, false, nil
 	}
 
 	if token == a.token {
-		return a.username, false, true
+		return a.username, false, true, nil
 	}
 
-	return "", false, false
+	return "", false, false, nil
 }
 
 type tokenSignValidator struct {
@@ -148,33 +150,33 @@ func NewTokenSignValidator(key []byte) TokenSignValidator {
 
 const signedTokenPrefix = "sign:"
 
-func (a *tokenSignValidator) Sign(_ context.Context, method, path string, username string, expiration time.Duration) string {
+func (a *tokenSignValidator) Sign(_ context.Context, method, path string, username string, expiration time.Duration) (string, error) {
 	if len(a.key) == 0 {
-		return ""
+		return "", nil
 	}
 
 	if !strings.HasPrefix(path, "/") {
 		u, err := url.Parse(path)
 		if err != nil {
-			return ""
+			return "", fmt.Errorf("invalid path for signing: %w", err)
 		}
 		path = u.Path
 	}
 
 	token, err := signToken(a.key, username, time.Now().Add(expiration), method, path)
 	if err != nil {
-		return ""
+		return "", nil
 	}
-	return signedTokenPrefix + token
+	return signedTokenPrefix + token, nil
 }
 
-func (a *tokenSignValidator) Validate(_ context.Context, method, path string, token string) (string, bool, bool) {
+func (a *tokenSignValidator) Validate(_ context.Context, method, path string, token string) (string, bool, bool, error) {
 	if len(a.key) == 0 {
-		return "", true, false
+		return "", true, false, nil
 	}
 
 	if !strings.HasPrefix(token, signedTokenPrefix) {
-		return "", true, false
+		return "", true, false, nil
 	}
 
 	token = strings.TrimPrefix(token, signedTokenPrefix)
@@ -182,16 +184,16 @@ func (a *tokenSignValidator) Validate(_ context.Context, method, path string, to
 	if !strings.HasPrefix(path, "/") {
 		u, err := url.Parse(path)
 		if err != nil {
-			return "", false, false
+			return "", false, false, nil
 		}
 		path = u.Path
 	}
 
 	username, ok := verifyToken(a.key, token, method, path)
 	if !ok {
-		return "", false, false
+		return "", false, false, nil
 	}
-	return username, false, true
+	return username, false, true, nil
 }
 
 // BasicAuthHandler returns an HTTP middleware that authenticates via Basic auth.
@@ -210,7 +212,12 @@ func BasicAuthHandler(auth BasicAuthValidator, h http.Handler) http.Handler {
 		}
 		username, password, ok := r.BasicAuth()
 		if ok {
-			user, next, valid := auth.Validate(r.Context(), username, password)
+			user, next, valid, err := auth.Validate(r.Context(), username, password)
+			if err != nil {
+				slog.WarnContext(r.Context(), "basic auth validation error", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 			if valid {
 				r = r.WithContext(WithContext(r.Context(), UserInfo{User: user}))
 				h.ServeHTTP(w, r)
@@ -240,7 +247,12 @@ func TokenSignValidatorHandler(auth TokenSignValidator, h http.Handler) http.Han
 			return
 		}
 		if token, ok := parseBearerToken(r); ok {
-			user, next, valid := auth.Validate(r.Context(), r.Method, r.URL.RequestURI(), token)
+			user, next, valid, err := auth.Validate(r.Context(), r.Method, r.URL.RequestURI(), token)
+			if err != nil {
+				slog.WarnContext(r.Context(), "token sign validation error", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 			if valid {
 				r = r.WithContext(WithContext(r.Context(), UserInfo{User: user}))
 				h.ServeHTTP(w, r)
@@ -269,7 +281,12 @@ func TokenValidatorHandler(auth TokenValidator, h http.Handler) http.Handler {
 			return
 		}
 		if token, ok := parseBearerToken(r); ok {
-			user, next, valid := auth.Validate(r.Context(), token)
+			user, next, valid, err := auth.Validate(r.Context(), token)
+			if err != nil {
+				slog.WarnContext(r.Context(), "token validation error", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 			if valid {
 				r = r.WithContext(WithContext(r.Context(), UserInfo{User: user}))
 				h.ServeHTTP(w, r)

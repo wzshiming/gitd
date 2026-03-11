@@ -57,7 +57,7 @@ func TestAuthenticateBearerToken(t *testing.T) {
 		TokenSignValidatorHandler(tokenSignValidator, AnonymousAuthenticateHandler(inner)))
 
 	// Generate a valid signed token
-	validToken := tokenSignValidator.Sign(context.Background(), http.MethodGet, "/", "admin", time.Hour)
+	validToken, _ := tokenSignValidator.Sign(context.Background(), http.MethodGet, "/", "admin", time.Hour)
 
 	t.Run("valid bearer token", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -125,7 +125,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateBasicAuth valid", func(t *testing.T) {
 		auth := NewSimpleBasicAuthValidator("admin", "secret")
-		user, _, ok := auth.Validate(ctx, "admin", "secret")
+		user, _, ok, _ := auth.Validate(ctx, "admin", "secret")
 		if !ok {
 			t.Error("Expected valid basic auth to succeed")
 		}
@@ -136,7 +136,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateBasicAuth invalid password", func(t *testing.T) {
 		auth := NewSimpleBasicAuthValidator("admin", "secret")
-		_, _, ok := auth.Validate(ctx, "admin", "wrong")
+		_, _, ok, _ := auth.Validate(ctx, "admin", "wrong")
 		if ok {
 			t.Error("Expected invalid password to fail")
 		}
@@ -144,7 +144,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateBasicAuth invalid username", func(t *testing.T) {
 		auth := NewSimpleBasicAuthValidator("admin", "secret")
-		_, _, ok := auth.Validate(ctx, "other", "secret")
+		_, _, ok, _ := auth.Validate(ctx, "other", "secret")
 		if ok {
 			t.Error("Expected invalid username to fail")
 		}
@@ -152,7 +152,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateToken valid", func(t *testing.T) {
 		tokenAuth := NewSimpleTokenValidator("admin", "my-token")
-		user, _, ok := tokenAuth.Validate(ctx, "my-token")
+		user, _, ok, _ := tokenAuth.Validate(ctx, "my-token")
 		if !ok {
 			t.Error("Expected valid token to succeed")
 		}
@@ -163,8 +163,8 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateToken JWT round-trip", func(t *testing.T) {
 		tokenSignValidator := NewTokenSignValidator([]byte("secret"))
-		token := tokenSignValidator.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
-		user, _, ok := tokenSignValidator.Validate(ctx, http.MethodGet, "http://example.com", token)
+		token, _ := tokenSignValidator.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
+		user, _, ok, _ := tokenSignValidator.Validate(ctx, http.MethodGet, "http://example.com", token)
 		if !ok {
 			t.Error("Expected signed token to be valid")
 		}
@@ -175,7 +175,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidateToken invalid", func(t *testing.T) {
 		auth := NewSimpleTokenValidator("admin", "secret")
-		_, _, ok := auth.Validate(ctx, "wrong")
+		_, _, ok, _ := auth.Validate(ctx, "wrong")
 		if ok {
 			t.Error("Expected invalid token to fail")
 		}
@@ -183,7 +183,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidatePublicKey valid", func(t *testing.T) {
 		auth := NewSimplePublicKeyValidator([][]byte{pubKey})
-		user, _, ok := auth.Validate(ctx, "git", "type", pubKey)
+		user, _, ok, _ := auth.Validate(ctx, "git", "type", pubKey)
 		if !ok {
 			t.Error("Expected valid public key to succeed")
 		}
@@ -194,7 +194,7 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("ValidatePublicKey invalid", func(t *testing.T) {
 		auth := NewSimplePublicKeyValidator([][]byte{pubKey})
-		_, _, ok := auth.Validate(ctx, "git", "type", []byte("unknown-key"))
+		_, _, ok, _ := auth.Validate(ctx, "git", "type", []byte("unknown-key"))
 		if ok {
 			t.Error("Expected invalid public key to fail")
 		}
@@ -202,11 +202,11 @@ func TestSimpleAuthenticator(t *testing.T) {
 
 	t.Run("LFSAuthHeaders", func(t *testing.T) {
 		auth := NewTokenSignValidator([]byte("secret"))
-		token := auth.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
+		token, _ := auth.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
 		if token == "" {
 			t.Fatal("Expected non-empty token")
 		}
-		user, _, ok := auth.Validate(ctx, http.MethodGet, "http://example.com", token)
+		user, _, ok, _ := auth.Validate(ctx, http.MethodGet, "http://example.com", token)
 		if !ok {
 			t.Fatal("Failed to verify token")
 		}
@@ -222,7 +222,7 @@ func TestSimpleAuthenticatorSingleMethodInterfaces(t *testing.T) {
 
 	t.Run("BasicAuthValidator", func(t *testing.T) {
 		var v BasicAuthValidator = NewSimpleBasicAuthValidator("admin", "secret")
-		user, _, ok := v.Validate(ctx, "admin", "secret")
+		user, _, ok, _ := v.Validate(ctx, "admin", "secret")
 		if !ok || user != "admin" {
 			t.Errorf("BasicAuthValidator: got user=%q, ok=%v", user, ok)
 		}
@@ -230,7 +230,7 @@ func TestSimpleAuthenticatorSingleMethodInterfaces(t *testing.T) {
 
 	t.Run("TokenValidator", func(t *testing.T) {
 		var v TokenValidator = NewSimpleTokenValidator("admin", "my-token")
-		user, _, ok := v.Validate(ctx, "my-token")
+		user, _, ok, _ := v.Validate(ctx, "my-token")
 		if !ok || user != "admin" {
 			t.Errorf("TokenValidator: got user=%q, ok=%v", user, ok)
 		}
@@ -238,7 +238,7 @@ func TestSimpleAuthenticatorSingleMethodInterfaces(t *testing.T) {
 
 	t.Run("PublicKeyValidator", func(t *testing.T) {
 		var v PublicKeyValidator = NewSimplePublicKeyValidator([][]byte{pubKey})
-		user, _, ok := v.Validate(ctx, "git", "type", pubKey)
+		user, _, ok, _ := v.Validate(ctx, "git", "type", pubKey)
 		if !ok || user != "git" {
 			t.Errorf("PublicKeyValidator: got user=%q, ok=%v", user, ok)
 		}
@@ -246,11 +246,11 @@ func TestSimpleAuthenticatorSingleMethodInterfaces(t *testing.T) {
 
 	t.Run("TokenSignValidator", func(t *testing.T) {
 		var v TokenSignValidator = NewTokenSignValidator([]byte("secret"))
-		token := v.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
+		token, _ := v.Sign(ctx, http.MethodGet, "http://example.com", "admin", time.Hour)
 		if token == "" {
 			t.Error("Expected non-empty token")
 		}
-		user, _, ok := v.Validate(ctx, http.MethodGet, "http://example.com", token)
+		user, _, ok, _ := v.Validate(ctx, http.MethodGet, "http://example.com", token)
 		if !ok || user != "admin" {
 			t.Errorf("TokenSignValidator: got user=%q, ok=%v", user, ok)
 		}
@@ -262,7 +262,7 @@ func TestSimpleAuthenticatorNoCredentials(t *testing.T) {
 
 	t.Run("empty username disables basic auth", func(t *testing.T) {
 		auth := NewSimpleBasicAuthValidator("", "secret")
-		_, _, ok := auth.Validate(ctx, "", "secret")
+		_, _, ok, _ := auth.Validate(ctx, "", "secret")
 		if ok {
 			t.Error("Expected empty username to disable basic auth")
 		}
@@ -270,7 +270,7 @@ func TestSimpleAuthenticatorNoCredentials(t *testing.T) {
 
 	t.Run("empty password disables token auth", func(t *testing.T) {
 		auth := NewSimpleTokenValidator("admin", "")
-		_, _, ok := auth.Validate(ctx, "")
+		_, _, ok, _ := auth.Validate(ctx, "")
 		if ok {
 			t.Error("Expected empty password to disable token auth")
 		}
@@ -278,7 +278,7 @@ func TestSimpleAuthenticatorNoCredentials(t *testing.T) {
 
 	t.Run("no authorized keys disables public key auth", func(t *testing.T) {
 		auth := NewSimplePublicKeyValidator(nil)
-		_, _, ok := auth.Validate(ctx, "git", "type", []byte("some-key"))
+		_, _, ok, _ := auth.Validate(ctx, "git", "type", []byte("some-key"))
 		if ok {
 			t.Error("Expected no authorized keys to disable public key auth")
 		}
@@ -286,7 +286,7 @@ func TestSimpleAuthenticatorNoCredentials(t *testing.T) {
 
 	t.Run("LFSAuthHeaders nil when no credentials", func(t *testing.T) {
 		auth := NewTokenSignValidator([]byte(""))
-		token := auth.Sign(ctx, http.MethodGet, "http://example.com", "someone", time.Hour)
+		token, _ := auth.Sign(ctx, http.MethodGet, "http://example.com", "someone", time.Hour)
 		if token != "" {
 			t.Errorf("Expected empty token, got %q", token)
 		}
@@ -322,7 +322,7 @@ func TestHTTPMiddleware(t *testing.T) {
 	})
 
 	t.Run("bearer token via HTTPMiddleware", func(t *testing.T) {
-		validToken := tokenSignValidator.Sign(context.Background(), http.MethodGet, "/", "admin", time.Hour)
+		validToken, _ := tokenSignValidator.Sign(context.Background(), http.MethodGet, "/", "admin", time.Hour)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+validToken)
 		rr := httptest.NewRecorder()

@@ -120,7 +120,7 @@ func TestHTTPAuthBearerToken(t *testing.T) {
 
 	// Generate a valid signed token for POST /api/repos/create
 	tokenSignValidator := authenticate.NewTokenSignValidator([]byte("my-secret-token"))
-	validToken := tokenSignValidator.Sign(t.Context(), http.MethodPost, "/api/repos/create", "admin", time.Hour)
+	validToken, _ := tokenSignValidator.Sign(t.Context(), http.MethodPost, "/api/repos/create", "admin", time.Hour)
 
 	t.Run("ValidBearerToken", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodPost, endpoint+"/api/repos/create", strings.NewReader(`{"type":"model","name":"bearer-model","organization":"bearer-user"}`))
