@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
 
+	"github.com/wzshiming/hfd/pkg/authenticate"
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/receive"
 	"github.com/wzshiming/hfd/pkg/repository"
@@ -832,12 +833,20 @@ func (h *Handler) handleSuperSquash(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	message := req.Message
-	if message == "" {
-		message = "Super-squash branch '" + rev + "' using huggingface_hub"
+	user, ok := authenticate.GetUserInfo(r.Context())
+	if !ok {
+		user = authenticate.UserInfo{
+			User:  "HuggingFace",
+			Email: "hf@users.noreply.huggingface.co",
+		}
 	}
 
-	if _, err := repo.SuperSquash(r.Context(), rev, message, "HuggingFace", "hf@users.noreply.huggingface.co"); err != nil {
+	message := req.Message
+	if message == "" {
+		message = "Super-squash branch '" + rev + "'"
+	}
+
+	if _, err := repo.SuperSquash(r.Context(), rev, message, user.User, user.Email); err != nil {
 		responseJSON(w, fmt.Errorf("failed to squash repository %q rev %q: %v", ri.RepoName, rev, err), http.StatusInternalServerError)
 		return
 	}
