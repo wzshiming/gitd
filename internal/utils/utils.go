@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
 )
 
+// Command creates an exec.Cmd with the given name and arguments, and logs the command being executed.
 func Command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	slog.InfoContext(ctx, "Executing command", "name", name, "args", strings.Join(args, " "))
+	slog.InfoContext(ctx, "Exec", "Cmd", name, "Args", args)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stderr = os.Stderr
 	return cmd
