@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,10 +13,6 @@ import (
 	"github.com/wzshiming/hfd/pkg/authenticate"
 	"github.com/wzshiming/hfd/pkg/lfs"
 	"github.com/wzshiming/hfd/pkg/permission"
-)
-
-var (
-	ErrNotOwner = errors.New("attempt to delete other user's lock")
 )
 
 func (h *Handler) handleGetLock(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +192,7 @@ func (h *Handler) handleDeleteLock(w http.ResponseWriter, r *http.Request) {
 
 	l, err := h.locksStore.Delete(repoName, user, lockId, unlockRequest.Force)
 	if err != nil {
-		if err == ErrNotOwner {
+		if err == lfs.ErrNotOwner {
 			responseJSON(w, &lfs.UnlockResponse{Message: err.Error()}, http.StatusForbidden)
 		} else {
 			responseJSON(w, &lfs.UnlockResponse{Message: err.Error()}, http.StatusInternalServerError)
