@@ -8,39 +8,30 @@ import (
 
 	"github.com/wzshiming/hfd/pkg/authenticate"
 	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/mirror"
 	"github.com/wzshiming/hfd/pkg/permission"
-	"github.com/wzshiming/hfd/pkg/repository"
 	"github.com/wzshiming/hfd/pkg/storage"
 )
 
-// Handler
+// Handler handles HTTP requests for Git LFS API endpoints, including batch operations and object content management.
 type Handler struct {
-	storage *storage.Storage
-
-	root *mux.Router
-
-	next http.Handler
-
-	lfsTeeCache        *lfs.TeeCache
+	storage            *storage.Storage
+	root               *mux.Router
+	next               http.Handler
 	lfsStore           lfs.Store
 	locksStore         *lfs.LockDB
 	permissionHookFunc permission.PermissionHookFunc
 	tokenSignValidator authenticate.TokenSignValidator
-	mirrorSourceFunc   repository.MirrorSourceFunc
+	mirror             *mirror.Mirror
 }
 
+// Option defines a functional option for configuring the Handler.
 type Option func(*Handler)
 
+// WithStorage sets the storage backend for the handler. This is required.
 func WithStorage(storage *storage.Storage) Option {
 	return func(h *Handler) {
 		h.storage = storage
-	}
-}
-
-// WithLFSTeeCache sets the LFS tee cache for transparent upstream object fetching.
-func WithLFSTeeCache(tc *lfs.TeeCache) Option {
-	return func(h *Handler) {
-		h.lfsTeeCache = tc
 	}
 }
 
@@ -72,10 +63,11 @@ func WithLFSStore(store lfs.Store) Option {
 	}
 }
 
-// WithMirrorSourceFunc sets the repository mirror source callback for deriving upstream URLs.
-func WithMirrorSourceFunc(fn repository.MirrorSourceFunc) Option {
+// WithMirror sets the mirror to use for repository synchronization. If not provided,
+// a mirror will be created when mirrorSourceFunc is set.
+func WithMirror(m *mirror.Mirror) Option {
 	return func(h *Handler) {
-		h.mirrorSourceFunc = fn
+		h.mirror = m
 	}
 }
 

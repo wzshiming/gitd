@@ -10,7 +10,6 @@ import (
 	"github.com/wzshiming/hfd/pkg/mirror"
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/receive"
-	"github.com/wzshiming/hfd/pkg/repository"
 	"github.com/wzshiming/hfd/pkg/storage"
 )
 
@@ -19,8 +18,6 @@ type Handler struct {
 	storage             *storage.Storage
 	root                *mux.Router
 	next                http.Handler
-	mirrorSourceFunc    repository.MirrorSourceFunc
-	mirrorRefFilterFunc repository.MirrorRefFilterFunc
 	permissionHookFunc  permission.PermissionHookFunc
 	preReceiveHookFunc  receive.PreReceiveHookFunc
 	postReceiveHookFunc receive.PostReceiveHookFunc
@@ -42,21 +39,6 @@ func WithStorage(storage *storage.Storage) Option {
 func WithNext(next http.Handler) Option {
 	return func(h *Handler) {
 		h.next = next
-	}
-}
-
-// WithMirrorSourceFunc sets the repository proxy callback for transparent upstream repository fetching.
-func WithMirrorSourceFunc(fn repository.MirrorSourceFunc) Option {
-	return func(h *Handler) {
-		h.mirrorSourceFunc = fn
-	}
-}
-
-// WithMirrorRefFilterFunc sets the ref filter callback for mirror operations.
-// When set, only refs accepted by the filter will be synced from the upstream.
-func WithMirrorRefFilterFunc(fn repository.MirrorRefFilterFunc) Option {
-	return func(h *Handler) {
-		h.mirrorRefFilterFunc = fn
 	}
 }
 
@@ -83,11 +65,11 @@ func WithPostReceiveHookFunc(fn receive.PostReceiveHookFunc) Option {
 	}
 }
 
-// WithMirrorTTL sets a minimum duration between successive mirror syncs for the same repository.
-// A zero value preserves the existing behavior of syncing on every read.
-func WithMirrorTTL(ttl time.Duration) Option {
+// WithMirror sets the mirror to use for repository synchronization. If not provided,
+// a mirror will be created when mirrorSourceFunc is set.
+func WithMirror(m *mirror.Mirror) Option {
 	return func(h *Handler) {
-		h.mirrorTTL = ttl
+		h.mirror = m
 	}
 }
 
@@ -99,17 +81,6 @@ func NewHandler(opts ...Option) *Handler {
 
 	for _, opt := range opts {
 		opt(h)
-	}
-
-	if h.mirrorSourceFunc != nil {
-		h.mirror = mirror.NewMirror(
-			mirror.WithMirrorSourceFunc(h.mirrorSourceFunc),
-			mirror.WithMirrorRefFilterFunc(h.mirrorRefFilterFunc),
-			mirror.WithPermissionHookFunc(h.permissionHookFunc),
-			mirror.WithPreReceiveHookFunc(h.preReceiveHookFunc),
-			mirror.WithPostReceiveHookFunc(h.postReceiveHookFunc),
-			mirror.WithTTL(h.mirrorTTL),
-		)
 	}
 
 	h.register()

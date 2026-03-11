@@ -32,14 +32,11 @@ type PublicKey = ssh.PublicKey
 type Server struct {
 	repositoriesDir     string
 	config              *ssh.ServerConfig
-	mirrorSourceFunc    repository.MirrorSourceFunc
-	mirrorRefFilterFunc repository.MirrorRefFilterFunc
 	permissionHookFunc  permission.PermissionHookFunc
 	preReceiveHookFunc  receive.PreReceiveHookFunc
 	postReceiveHookFunc receive.PostReceiveHookFunc
 	tokenSignValidator  authenticate.TokenSignValidator
 	lfsURL              string
-	mirrorTTL           time.Duration
 	mirror              *mirror.Mirror
 }
 
@@ -51,21 +48,6 @@ func WithPublicKeyCallback(fn func(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	return func(s *Server) {
 		s.config.NoClientAuth = false
 		s.config.PublicKeyCallback = fn
-	}
-}
-
-// WithMirrorSourceFunc sets the repository proxy callback for the SSH server.
-func WithMirrorSourceFunc(fn repository.MirrorSourceFunc) Option {
-	return func(s *Server) {
-		s.mirrorSourceFunc = fn
-	}
-}
-
-// WithMirrorRefFilterFunc sets the ref filter callback for mirror operations.
-// When set, only refs accepted by the filter will be synced from the upstream.
-func WithMirrorRefFilterFunc(fn repository.MirrorRefFilterFunc) Option {
-	return func(s *Server) {
-		s.mirrorRefFilterFunc = fn
 	}
 }
 
@@ -100,11 +82,11 @@ func WithLFSURL(lfsURL string) Option {
 	}
 }
 
-// WithMirrorTTL sets a minimum duration between successive mirror syncs for the same repository.
-// A zero value preserves the existing behavior of syncing on every read.
-func WithMirrorTTL(ttl time.Duration) Option {
+// WithMirror sets the mirror to use for repository synchronization. If not provided,
+// a mirror will be created when mirrorSourceFunc is set.
+func WithMirror(m *mirror.Mirror) Option {
 	return func(s *Server) {
-		s.mirrorTTL = ttl
+		s.mirror = m
 	}
 }
 
@@ -181,17 +163,6 @@ func NewServer(repositoriesDir string, hostKey ssh.Signer, opts ...Option) *Serv
 	}
 	for _, opt := range opts {
 		opt(s)
-	}
-
-	if s.mirrorSourceFunc != nil {
-		s.mirror = mirror.NewMirror(
-			mirror.WithMirrorSourceFunc(s.mirrorSourceFunc),
-			mirror.WithMirrorRefFilterFunc(s.mirrorRefFilterFunc),
-			mirror.WithPermissionHookFunc(s.permissionHookFunc),
-			mirror.WithPreReceiveHookFunc(s.preReceiveHookFunc),
-			mirror.WithPostReceiveHookFunc(s.postReceiveHookFunc),
-			mirror.WithTTL(s.mirrorTTL),
-		)
 	}
 
 	config.AddHostKey(hostKey)
@@ -344,6 +315,21 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 		return
 	}
 
+	// Reject pushes to mirror repositories
+	if service == repository.GitReceivePack && s.mirror != nil {
+		isMirror, err := s.mirror.IsMirror(ctx, repoPath)
+		if err != nil {
+			slog.ErrorContext(ctx, "ssh protocol: failed to check mirror status", "repo", repoPath, "error", err)
+			sendExitStatus(channel, 1)
+			return
+		}
+		if isMirror {
+			slog.WarnContext(ctx, "ssh protocol: push to mirror repository denied", "repo", repoPath)
+			sendExitStatus(channel, 1)
+			return
+		}
+	}
+
 	if s.permissionHookFunc != nil {
 		op := permission.OperationReadRepo
 		if service == repository.GitReceivePack {
@@ -356,17 +342,9 @@ func (s *Server) executeCommand(ctx context.Context, channel ssh.Channel, servic
 		}
 	}
 
-	if service == repository.GitReceivePack && s.mirrorSourceFunc != nil {
-		if _, isMirror, err := s.mirrorSourceFunc(ctx, repoPath); err == nil && isMirror {
-			slog.WarnContext(ctx, "ssh protocol: push to mirror repository is not allowed", "repo", repoPath)
-			sendExitStatus(channel, 1)
-			return
-		}
-	}
-
 	_, err := s.openRepo(ctx, fullPath, repoPath, service)
 	if err != nil {
-		slog.ErrorContext(ctx, "ssh protocol: repository not found", "repo", repoPath)
+		slog.WarnContext(ctx, "ssh protocol: repository not found", "repo", repoPath, "error", err)
 		sendExitStatus(channel, 1)
 		return
 	}
