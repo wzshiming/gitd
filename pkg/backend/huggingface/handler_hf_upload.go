@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gorilla/mux"
 
+	"github.com/wzshiming/hfd/pkg/authenticate"
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/receive"
 	"github.com/wzshiming/hfd/pkg/repository"
@@ -89,6 +90,14 @@ func (h *Handler) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	user, ok := authenticate.GetUserInfo(r.Context())
+	if !ok {
+		user = authenticate.UserInfo{
+			User:  "HuggingFace",
+			Email: "hf@users.noreply.huggingface.co",
+		}
+	}
+
 	urlName := "/" + storageName
 
 	repoPath := repository.ResolvePath(h.storage.RepositoriesDir(), storageName)
@@ -122,7 +131,7 @@ func (h *Handler) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create initial commit with default .gitattributes
-	_, err = repo.CreateCommit(context.Background(), defaultBranch, "Initial commit", "HuggingFace", "hf@users.noreply.huggingface.co", []repository.CommitOperation{
+	_, err = repo.CreateCommit(context.Background(), defaultBranch, "Initial commit", user.User, user.Email, []repository.CommitOperation{
 		{
 			Type:    repository.CommitOperationAdd,
 			Path:    repository.GitattributesFileName,
@@ -215,6 +224,14 @@ func (h *Handler) handleCommit(w http.ResponseWriter, r *http.Request) {
 		}); err != nil {
 			responseJSON(w, err.Error(), http.StatusForbidden)
 			return
+		}
+	}
+
+	user, ok := authenticate.GetUserInfo(r.Context())
+	if !ok {
+		user = authenticate.UserInfo{
+			User:  "HuggingFace",
+			Email: "hf@users.noreply.huggingface.co",
 		}
 	}
 
@@ -343,8 +360,7 @@ func (h *Handler) handleCommit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// TODO: Add support for specifying author/committer in the request body
-	commitHash, err := repo.CreateCommit(r.Context(), rev, message, "HuggingFace", "hf@users.noreply.huggingface.co", ops, header.ParentCommit)
+	commitHash, err := repo.CreateCommit(r.Context(), rev, message, user.User, user.Email, ops, header.ParentCommit)
 	if err != nil {
 		responseJSON(w, fmt.Errorf("failed to create commit in repository %q: %v", ri.RepoName, err), http.StatusInternalServerError)
 		return
