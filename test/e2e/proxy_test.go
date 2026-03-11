@@ -19,6 +19,7 @@ import (
 	backendlfs "github.com/wzshiming/hfd/pkg/backend/lfs"
 	backendssh "github.com/wzshiming/hfd/pkg/backend/ssh"
 	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/mirror"
 	"github.com/wzshiming/hfd/pkg/repository"
 	"github.com/wzshiming/hfd/pkg/storage"
 	"golang.org/x/crypto/ssh"
@@ -38,12 +39,16 @@ func setupProxyServer(t *testing.T, upstreamURL string) (*httptest.Server, strin
 	store := storage.NewStorage(storage.WithRootDir(dataDir))
 	lfsStore := lfs.NewLocal(store.LFSDir())
 
+	sharedMirror := mirror.NewMirror(
+		mirror.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+	)
+
 	var handler http.Handler
 
 	handler = backendhuggingface.NewHandler(
 		backendhuggingface.WithStorage(store),
 		backendhuggingface.WithLFSStore(lfsStore),
-		backendhuggingface.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+		backendhuggingface.WithMirror(sharedMirror),
 	)
 
 	handler = backendlfs.NewHandler(
@@ -55,7 +60,7 @@ func setupProxyServer(t *testing.T, upstreamURL string) (*httptest.Server, strin
 	handler = backendhttp.NewHandler(
 		backendhttp.WithStorage(store),
 		backendhttp.WithNext(handler),
-		backendhttp.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+		backendhttp.WithMirror(sharedMirror),
 	)
 
 	server := httptest.NewServer(handler)
@@ -86,10 +91,14 @@ func setupSSHProxyServer(t *testing.T, upstreamURL string) (net.Listener, string
 		t.Fatalf("Failed to create host key signer: %v", err)
 	}
 
+	sharedMirror := mirror.NewMirror(
+		mirror.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+	)
+
 	sshServer := backendssh.NewServer(
 		store.RepositoriesDir(),
 		hostKey,
-		backendssh.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+		backendssh.WithMirror(sharedMirror),
 	)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -311,13 +320,17 @@ func setupProxyServerWithRefFilter(t *testing.T, upstreamURL string, refFilter r
 	store := storage.NewStorage(storage.WithRootDir(dataDir))
 	lfsStore := lfs.NewLocal(store.LFSDir())
 
+	sharedMirror := mirror.NewMirror(
+		mirror.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
+		mirror.WithMirrorRefFilterFunc(refFilter),
+	)
+
 	var handler http.Handler
 
 	handler = backendhuggingface.NewHandler(
 		backendhuggingface.WithStorage(store),
 		backendhuggingface.WithLFSStore(lfsStore),
-		backendhuggingface.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
-		backendhuggingface.WithMirrorRefFilterFunc(refFilter),
+		backendhuggingface.WithMirror(sharedMirror),
 	)
 
 	handler = backendlfs.NewHandler(
@@ -329,8 +342,7 @@ func setupProxyServerWithRefFilter(t *testing.T, upstreamURL string, refFilter r
 	handler = backendhttp.NewHandler(
 		backendhttp.WithStorage(store),
 		backendhttp.WithNext(handler),
-		backendhttp.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamURL)),
-		backendhttp.WithMirrorRefFilterFunc(refFilter),
+		backendhttp.WithMirror(sharedMirror),
 	)
 
 	server := httptest.NewServer(handler)

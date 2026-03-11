@@ -13,7 +13,6 @@ import (
 	"github.com/wzshiming/hfd/internal/utils"
 	backendhttp "github.com/wzshiming/hfd/pkg/backend/http"
 	"github.com/wzshiming/hfd/pkg/permission"
-	"github.com/wzshiming/hfd/pkg/repository"
 	"github.com/wzshiming/hfd/pkg/storage"
 )
 
@@ -105,131 +104,6 @@ func TestHTTPHandler(t *testing.T) {
 		}
 		if string(content) != "# Test Repository\n" {
 			t.Errorf("Unexpected content: %s", content)
-		}
-	})
-}
-
-func TestHTTPProxyMode(t *testing.T) {
-	// Create a temporary directory for the upstream server
-	upstreamDir, err := os.MkdirTemp("", "proxy-test-upstream")
-	if err != nil {
-		t.Fatalf("Failed to create temp upstream dir: %v", err)
-	}
-	defer func() {
-		_ = os.RemoveAll(upstreamDir)
-	}()
-
-	// Create a temporary directory for the proxy server
-	proxyDir, err := os.MkdirTemp("", "proxy-test-proxy")
-	if err != nil {
-		t.Fatalf("Failed to create temp proxy dir: %v", err)
-	}
-	defer func() {
-		_ = os.RemoveAll(proxyDir)
-	}()
-
-	// Create a temporary directory for client operations
-	clientDir, err := os.MkdirTemp("", "proxy-test-client")
-	if err != nil {
-		t.Fatalf("Failed to create temp client dir: %v", err)
-	}
-	defer func() {
-		_ = os.RemoveAll(clientDir)
-	}()
-
-	// Set up upstream server with a repository
-	upstreamStorage := storage.NewStorage(storage.WithRootDir(upstreamDir))
-
-	repoName := "test-repo"
-	repoPath := filepath.Join(upstreamStorage.RepositoriesDir(), repoName+".git")
-	if err := os.MkdirAll(filepath.Dir(repoPath), 0755); err != nil {
-		t.Fatalf("Failed to create repos dir: %v", err)
-	}
-	runGitCmd(t, "", "init", "--bare", repoPath)
-
-	upstreamHandler := backendhttp.NewHandler(
-		backendhttp.WithStorage(upstreamStorage),
-	)
-	upstreamServer := httptest.NewServer(upstreamHandler)
-	defer upstreamServer.Close()
-
-	// Push content to the upstream
-	upstreamCloneDir := filepath.Join(clientDir, "upstream-clone")
-	upstreamURL := upstreamServer.URL + "/" + repoName + ".git"
-	runGitCmd(t, "", "clone", upstreamURL, upstreamCloneDir)
-	runGitCmd(t, upstreamCloneDir, "config", "user.email", "test@test.com")
-	runGitCmd(t, upstreamCloneDir, "config", "user.name", "Test User")
-
-	testFile := filepath.Join(upstreamCloneDir, "README.md")
-	if err := os.WriteFile(testFile, []byte("# Proxied Repository\n"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	runGitCmd(t, upstreamCloneDir, "add", "README.md")
-	runGitCmd(t, upstreamCloneDir, "commit", "-m", "Initial commit")
-	runGitCmd(t, upstreamCloneDir, "push", "-u", "origin", "master")
-
-	// Set up proxy server pointing to upstream
-	proxyStorage := storage.NewStorage(
-		storage.WithRootDir(proxyDir),
-	)
-
-	proxyHandler := backendhttp.NewHandler(
-		backendhttp.WithStorage(proxyStorage),
-		backendhttp.WithMirrorSourceFunc(repository.NewMirrorSourceFunc(upstreamServer.URL)),
-	)
-	proxyServer := httptest.NewServer(proxyHandler)
-	defer proxyServer.Close()
-
-	proxyURL := proxyServer.URL + "/" + repoName + ".git"
-
-	t.Run("CloneFromProxy", func(t *testing.T) {
-		cloneDir := filepath.Join(clientDir, "proxy-clone")
-		runGitCmd(t, "", "clone", proxyURL, cloneDir)
-
-		// Verify the cloned content matches the upstream
-		readmePath := filepath.Join(cloneDir, "README.md")
-		content, err := os.ReadFile(readmePath)
-		if err != nil {
-			t.Fatalf("Failed to read README.md: %v", err)
-		}
-		if string(content) != "# Proxied Repository\n" {
-			t.Errorf("Unexpected content: %s", content)
-		}
-	})
-
-	t.Run("CloneFromProxyCached", func(t *testing.T) {
-		// Second clone should use the cached mirror
-		cloneDir := filepath.Join(clientDir, "proxy-clone-cached")
-		runGitCmd(t, "", "clone", proxyURL, cloneDir)
-
-		readmePath := filepath.Join(cloneDir, "README.md")
-		content, err := os.ReadFile(readmePath)
-		if err != nil {
-			t.Fatalf("Failed to read README.md: %v", err)
-		}
-		if string(content) != "# Proxied Repository\n" {
-			t.Errorf("Unexpected content: %s", content)
-		}
-	})
-
-	t.Run("ProxyRepoIsMirror", func(t *testing.T) {
-		// Verify the proxied repo is marked as a mirror (push should be forbidden)
-		proxyRepoPath := filepath.Join(proxyStorage.RepositoriesDir(), repoName+".git")
-		if _, err := os.Stat(proxyRepoPath); os.IsNotExist(err) {
-			t.Fatalf("Proxied repository was not created on disk")
-		}
-	})
-
-	t.Run("NonExistentRepoReturns404", func(t *testing.T) {
-		nonExistentURL := proxyServer.URL + "/nonexistent.git/info/refs?service=git-upload-pack"
-		resp, err := http.Get(nonExistentURL)
-		if err != nil {
-			t.Fatalf("Failed to make request: %v", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("Expected 404, got %d", resp.StatusCode)
 		}
 	})
 }

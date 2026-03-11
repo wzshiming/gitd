@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/wzshiming/hfd/pkg/lfs"
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/receive"
 	"github.com/wzshiming/hfd/pkg/repository"
@@ -19,6 +20,7 @@ type Mirror struct {
 	permissionHookFunc  permission.PermissionHookFunc
 	preReceiveHookFunc  receive.PreReceiveHookFunc
 	postReceiveHookFunc receive.PostReceiveHookFunc
+	lfsTeeCache         *lfs.TeeCache
 	ttl                 time.Duration
 	group               singleflight.Group
 	lastSync            map[string]time.Time
@@ -70,6 +72,13 @@ func WithTTL(ttl time.Duration) Option {
 	}
 }
 
+// WithLFSCache sets the LFS tee cache for transparent upstream object fetching during mirror sync.
+func WithLFSCache(tc *lfs.TeeCache) Option {
+	return func(m *Mirror) {
+		m.lfsTeeCache = tc
+	}
+}
+
 // NewMirror creates a new Mirror with the provided options.
 func NewMirror(opts ...Option) *Mirror {
 	m := &Mirror{
@@ -81,14 +90,33 @@ func NewMirror(opts ...Option) *Mirror {
 	return m
 }
 
+// IsMirror checks if a repository is configured as a mirror. Returns false if mirrorSourceFunc is not set.
+func (m *Mirror) IsMirror(ctx context.Context, repoName string) (bool, error) {
+	if m.mirrorSourceFunc == nil {
+		return false, nil
+	}
+	_, isMirror, err := m.mirrorSourceFunc(ctx, repoName)
+	return isMirror, err
+}
+
 // OpenOrSync opens the repository at repoPath. If it doesn't exist and mirrorSourceFunc is set, it attempts to initialize a mirror from the source URL.
 func (m *Mirror) OpenOrSync(ctx context.Context, repoPath, repoName string) (*repository.Repository, error) {
-	if m.mirrorSourceFunc == nil {
+	sourceURL, isMirror, err := m.mirrorSourceFunc(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if !isMirror {
 		return repository.Open(repoPath)
 	}
 
+	if m.permissionHookFunc != nil {
+		if err := m.permissionHookFunc(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
+			return nil, err
+		}
+	}
+
 	v, err, shared := m.group.Do(repoName, func() (any, error) {
-		return m.openOrSync(ctx, repoPath, repoName)
+		return m.openOrSync(ctx, repoPath, repoName, sourceURL)
 	})
 	if err != nil {
 		return nil, err
@@ -99,55 +127,26 @@ func (m *Mirror) OpenOrSync(ctx context.Context, repoPath, repoName string) (*re
 	return v.(*repository.Repository), nil
 }
 
-func (m *Mirror) openOrSync(ctx context.Context, repoPath, repoName string) (*repository.Repository, error) {
+func (m *Mirror) openOrSync(ctx context.Context, repoPath, repoName, sourceURL string) (*repository.Repository, error) {
 	repo, err := repository.Open(repoPath)
 	if err != nil {
 		if err != repository.ErrRepositoryNotExists {
 			return nil, err
 		}
-		if m.permissionHookFunc != nil {
-			if err := m.permissionHookFunc(ctx, permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
-				return nil, err
-			}
-		}
-		sourceURL, isMirror, err := m.mirrorSourceFunc(ctx, repoName)
-		if err != nil {
-			return nil, err
-		}
-		if !isMirror {
-			return nil, repository.ErrRepositoryNotExists
-		}
 		repo, err = repository.InitMirror(ctx, repoPath, sourceURL)
 		if err != nil {
 			return nil, repository.ErrRepositoryNotExists
 		}
-		if !m.shouldSync(repoName) {
-			return repo, nil
-		}
-		defer m.markSynced(repoName)
+	}
 
-		err = m.syncMirror(ctx, repo, repoName, sourceURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sync mirror: %w", err)
-		}
-	} else {
-		sourceURL, isMirror, err := m.mirrorSourceFunc(ctx, repoName)
-		if err != nil {
-			slog.WarnContext(ctx, "mirrorSourceFunc error", "repo", repoName, "error", err)
-			return repo, nil
-		}
-		if !isMirror {
-			return repo, nil
-		}
-		if !m.shouldSync(repoName) {
-			return repo, nil
-		}
-		defer m.markSynced(repoName)
+	if !m.shouldSync(repoName) {
+		return repo, nil
+	}
+	defer m.markSynced(repoName)
 
-		err = m.syncMirror(ctx, repo, repoName, sourceURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sync mirror: %w", err)
-		}
+	err = m.syncMirror(ctx, repo, repoName, sourceURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync mirror: %w", err)
 	}
 	return repo, nil
 }

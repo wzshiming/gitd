@@ -20,6 +20,7 @@ import (
 	backendlfs "github.com/wzshiming/hfd/pkg/backend/lfs"
 	backendssh "github.com/wzshiming/hfd/pkg/backend/ssh"
 	"github.com/wzshiming/hfd/pkg/lfs"
+	"github.com/wzshiming/hfd/pkg/mirror"
 	"github.com/wzshiming/hfd/pkg/permission"
 	"github.com/wzshiming/hfd/pkg/receive"
 	"github.com/wzshiming/hfd/pkg/repository"
@@ -144,28 +145,6 @@ func main() {
 		)
 	}
 
-	var mirrorSourceFunc repository.MirrorSourceFunc
-	var mirrorRefFilterFunc repository.MirrorRefFilterFunc
-	var lfsTeeCache *lfs.TeeCache
-	if proxyURL != "" {
-		slog.InfoContext(ctx, "Proxy mode enabled", "source", proxyURL)
-		lfsTeeCache = lfs.NewTeeCache(
-			utils.HTTPClient,
-			lfsStore,
-		)
-		mirrorSourceFunc = repository.NewMirrorSourceFunc(proxyURL)
-		mirrorRefFilterFunc = func(ctx context.Context, repoName string, remoteRefs []string) ([]string, error) {
-			var filtered []string
-			for _, ref := range remoteRefs {
-				if strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/tags/") {
-					filtered = append(filtered, ref)
-				}
-			}
-			slog.InfoContext(ctx, "Mirror ref filter", "repo", repoName, "remoteRefs", remoteRefs, "filteredRefs", filtered)
-			return filtered, nil
-		}
-	}
-
 	permissionHook := func(ctx context.Context, op permission.Operation, repoName string, opCtx permission.Context) error {
 		userInfo, _ := authenticate.GetUserInfo(ctx)
 		slog.InfoContext(ctx, "Permission check", "user", userInfo.User, "op", op, "repo", repoName, "context", opCtx)
@@ -188,6 +167,36 @@ func main() {
 				"ref", e.RefName, "old", e.OldRev, "new", e.NewRev)
 		}
 		return nil
+	}
+
+	var sharedMirror *mirror.Mirror
+	var lfsTeeCache *lfs.TeeCache
+	if proxyURL != "" {
+		slog.InfoContext(ctx, "Proxy mode enabled", "source", proxyURL)
+		lfsTeeCache = lfs.NewTeeCache(
+			utils.HTTPClient,
+			lfsStore,
+		)
+		mirrorSourceFunc := repository.NewMirrorSourceFunc(proxyURL)
+		mirrorRefFilterFunc := func(ctx context.Context, repoName string, remoteRefs []string) ([]string, error) {
+			var filtered []string
+			for _, ref := range remoteRefs {
+				if strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/tags/") {
+					filtered = append(filtered, ref)
+				}
+			}
+			slog.InfoContext(ctx, "Mirror ref filter", "repo", repoName, "remoteRefs", remoteRefs, "filteredRefs", filtered)
+			return filtered, nil
+		}
+		sharedMirror = mirror.NewMirror(
+			mirror.WithMirrorSourceFunc(mirrorSourceFunc),
+			mirror.WithMirrorRefFilterFunc(mirrorRefFilterFunc),
+			mirror.WithPermissionHookFunc(permissionHook),
+			mirror.WithPreReceiveHookFunc(preReceiveHook),
+			mirror.WithPostReceiveHookFunc(postReceiveHook),
+			mirror.WithLFSCache(lfsTeeCache),
+			mirror.WithTTL(mirrorTTL),
+		)
 	}
 
 	var basicAuthValidator authenticate.BasicAuthValidator
@@ -227,35 +236,30 @@ func main() {
 	handler = backendhuggingface.NewHandler(
 		backendhuggingface.WithStorage(storage),
 		backendhuggingface.WithNext(handler),
-		backendhuggingface.WithMirrorSourceFunc(mirrorSourceFunc),
-		backendhuggingface.WithLFSTeeCache(lfsTeeCache),
+		backendhuggingface.WithMirror(sharedMirror),
 		backendhuggingface.WithPermissionHookFunc(permissionHook),
 		backendhuggingface.WithPreReceiveHookFunc(preReceiveHook),
 		backendhuggingface.WithPostReceiveHookFunc(postReceiveHook),
 		backendhuggingface.WithLFSStore(lfsStore),
-		backendhuggingface.WithMirrorRefFilterFunc(mirrorRefFilterFunc),
-		backendhuggingface.WithMirrorTTL(mirrorTTL),
 	)
 
 	handler = backendlfs.NewHandler(
 		backendlfs.WithStorage(storage),
 		backendlfs.WithNext(handler),
-		backendlfs.WithLFSTeeCache(lfsTeeCache),
+		backendlfs.WithMirror(sharedMirror),
 		backendlfs.WithPermissionHookFunc(permissionHook),
 		backendlfs.WithTokenSignValidator(tokenSignValidator),
 		backendlfs.WithLFSStore(lfsStore),
-		backendlfs.WithMirrorSourceFunc(mirrorSourceFunc),
+		backendlfs.WithMirror(sharedMirror),
 	)
 
 	handler = backendhttp.NewHandler(
 		backendhttp.WithStorage(storage),
 		backendhttp.WithNext(handler),
-		backendhttp.WithMirrorSourceFunc(mirrorSourceFunc),
+		backendhttp.WithMirror(sharedMirror),
 		backendhttp.WithPermissionHookFunc(permissionHook),
 		backendhttp.WithPreReceiveHookFunc(preReceiveHook),
 		backendhttp.WithPostReceiveHookFunc(postReceiveHook),
-		backendhttp.WithMirrorRefFilterFunc(mirrorRefFilterFunc),
-		backendhttp.WithMirrorTTL(mirrorTTL),
 	)
 
 	handler = authenticate.AnonymousAuthenticateHandler(handler)
@@ -292,13 +296,11 @@ func main() {
 			backendssh.WithPermissionHookFunc(permissionHook),
 			backendssh.WithPreReceiveHookFunc(preReceiveHook),
 			backendssh.WithPostReceiveHookFunc(postReceiveHook),
-			backendssh.WithMirrorSourceFunc(mirrorSourceFunc),
+			backendssh.WithMirror(sharedMirror),
 			backendssh.WithLFSURL(lfsURL),
 			backendssh.WithBasicAuthValidator(basicAuthValidator),
 			backendssh.WithPublicKeyValidator(publicKeyValidator),
 			backendssh.WithTokenSignValidator(tokenSignValidator),
-			backendssh.WithMirrorRefFilterFunc(mirrorRefFilterFunc),
-			backendssh.WithMirrorTTL(mirrorTTL),
 		}
 
 		sshServer := backendssh.NewServer(storage.RepositoriesDir(), hostKeySigner, sshOpts...)

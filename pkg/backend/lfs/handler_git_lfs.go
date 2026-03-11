@@ -58,25 +58,18 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to fetch missing objects from proxy source
-	if len(missingObjects) > 0 {
+	if h.mirror != nil && len(missingObjects) > 0 {
 		repoName := bv.repoName()
-		proxyURL := h.getProxySourceURL(r.Context(), repoName)
-		proxyAllowed := true
-		if proxyURL != "" && h.lfsTeeCache != nil && h.permissionHookFunc != nil {
-			if err := h.permissionHookFunc(r.Context(), permission.OperationCreateProxyRepo, repoName, permission.Context{}); err != nil {
-				proxyAllowed = false
-			}
+		lfsObjects := make([]lfs.LFSObject, len(missingObjects))
+		for i, obj := range missingObjects {
+			lfsObjects[i] = lfs.LFSObject{Oid: obj.Oid, Size: obj.Size}
 		}
-		if proxyURL != "" && h.lfsTeeCache != nil && proxyAllowed {
-			lfsObjects := make([]lfs.LFSObject, len(missingObjects))
-			for i, obj := range missingObjects {
-				lfsObjects[i] = lfs.LFSObject{Oid: obj.Oid, Size: obj.Size}
-			}
-			err := h.lfsTeeCache.StartFetch(context.Background(), proxyURL, lfsObjects)
-			if err != nil {
-				responseJSON(w, fmt.Errorf("failed to fetch LFS objects from upstream source %q: %v", proxyURL, err), http.StatusInternalServerError)
-				return
-			}
+		sourceURL, started, err := h.mirror.StartLFSFetch(r.Context(), repoName, lfsObjects)
+		if err != nil {
+			responseJSON(w, fmt.Errorf("failed to fetch LFS objects from upstream source %q: %v", sourceURL, err), http.StatusInternalServerError)
+			return
+		}
+		if started {
 			for _, obj := range missingObjects {
 				responseObjects = append(responseObjects, h.lfsRepresent(r.Context(), obj, true, false))
 			}
@@ -105,20 +98,6 @@ func (h *Handler) handleBatch(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, respobj, http.StatusOK)
 }
 
-// getProxySourceURL returns the mirror source URL for the given repository if it is configured as a mirror and the URL is valid, otherwise returns an empty string.
-func (h *Handler) getProxySourceURL(ctx context.Context, repoName string) string {
-	if h.mirrorSourceFunc == nil {
-		return ""
-	}
-
-	sourceURL, isMirror, err := h.mirrorSourceFunc(ctx, repoName)
-	if err != nil || !isMirror || sourceURL == "" {
-		return ""
-	}
-
-	return sourceURL
-}
-
 // handlePutContent receives data from the client and puts it into the content store
 func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
@@ -141,8 +120,8 @@ func (h *Handler) handlePutContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleGetContent(w http.ResponseWriter, r *http.Request) {
 	rv := unpack(r)
 	if !h.lfsStore.Exists(rv.Oid) {
-		if h.lfsTeeCache != nil {
-			pf := h.lfsTeeCache.Get(rv.Oid)
+		if h.mirror != nil {
+			pf := h.mirror.Get(rv.Oid)
 			if pf != nil {
 				rs := pf.NewReadSeeker()
 				defer rs.Close()

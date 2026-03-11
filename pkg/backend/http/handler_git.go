@@ -41,6 +41,19 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject receive-pack (push) advertisement for mirror repositories
+	if service == repository.GitReceivePack && h.mirror != nil {
+		isMirror, err := h.mirror.IsMirror(r.Context(), repoName)
+		if err != nil {
+			responseText(w, fmt.Sprintf("Failed to check mirror status: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if isMirror {
+			responseText(w, "push to mirror repository is not allowed", http.StatusForbidden)
+			return
+		}
+	}
+
 	if h.permissionHookFunc != nil {
 		op := permission.OperationReadRepo
 		if service == repository.GitReceivePack {
@@ -66,12 +79,6 @@ func (h *Handler) handleInfoRefs(w http.ResponseWriter, r *http.Request) {
 		}
 		responseText(w, fmt.Sprintf("Failed to open repository %q: %v", repoName, err), http.StatusInternalServerError)
 		return
-	}
-	if service == repository.GitReceivePack && h.mirrorSourceFunc != nil {
-		if _, isMirror, err := h.mirrorSourceFunc(r.Context(), repoName); err == nil && isMirror {
-			responseText(w, fmt.Sprintf("push to mirror repository %q is not allowed", repoName), http.StatusForbidden)
-			return
-		}
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-advertisement", service))
@@ -105,11 +112,17 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 		return
 	}
 
-	// For receive-pack, parse ref updates early so they can be included in the permission check
-	var input io.Reader = r.Body
-	var updates []receive.RefUpdate
-	if service == repository.GitReceivePack {
-		updates, input = receive.ParseRefUpdates(r.Body, repoPath)
+	// Reject pushes to mirror repositories
+	if service == repository.GitReceivePack && h.mirror != nil {
+		isMirror, err := h.mirror.IsMirror(r.Context(), repoName)
+		if err != nil {
+			responseText(w, fmt.Sprintf("Failed to check mirror status: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if isMirror {
+			responseText(w, "push to mirror repository is not allowed", http.StatusForbidden)
+			return
+		}
 	}
 
 	if h.permissionHookFunc != nil {
@@ -121,6 +134,13 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 			responseText(w, err.Error(), http.StatusForbidden)
 			return
 		}
+	}
+
+	// For receive-pack, parse ref updates early so they can be included in the permission check
+	var input io.Reader = r.Body
+	var updates []receive.RefUpdate
+	if service == repository.GitReceivePack {
+		updates, input = receive.ParseRefUpdates(r.Body, repoPath)
 	}
 
 	// Pre-receive hook — can reject the push before git-receive-pack processes it.
@@ -139,12 +159,6 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request, service 
 		}
 		responseText(w, fmt.Sprintf("Failed to open repository %q: %v", repoName, err), http.StatusInternalServerError)
 		return
-	}
-	if service == repository.GitReceivePack && h.mirrorSourceFunc != nil {
-		if _, isMirror, err := h.mirrorSourceFunc(r.Context(), repoName); err == nil && isMirror {
-			responseText(w, fmt.Sprintf("push to mirror repository %q is not allowed", repoName), http.StatusForbidden)
-			return
-		}
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-result", service))
