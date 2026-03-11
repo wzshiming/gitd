@@ -117,10 +117,13 @@ func WithBasicAuthValidator(auth authenticate.BasicAuthValidator) Option {
 	return func(s *Server) {
 		s.config.NoClientAuth = false
 		s.config.PasswordCallback = func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-			if user, _, ok := auth.Validate(context.Background(), conn.User(), string(password)); ok {
+			if user, _, ok, err := auth.Validate(context.Background(), conn.User(), string(password)); err != nil {
+				slog.WarnContext(context.Background(), "password validation error", "error", err)
+				return nil, fmt.Errorf("password validation error")
+			} else if ok {
 				return permissionsExtensions(user), nil
 			}
-			return nil, fmt.Errorf("invalid credentials")
+			return nil, fmt.Errorf("invalid username or password")
 		}
 	}
 }
@@ -134,10 +137,13 @@ func WithPublicKeyValidator(auth authenticate.PublicKeyValidator) Option {
 	return func(s *Server) {
 		s.config.NoClientAuth = false
 		s.config.PublicKeyCallback = func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			if user, _, ok := auth.Validate(context.Background(), conn.User(), key.Type(), key.Marshal()); ok {
+			if user, _, ok, err := auth.Validate(context.Background(), conn.User(), key.Type(), key.Marshal()); err != nil {
+				slog.WarnContext(context.Background(), "public key validation error", "error", err)
+				return nil, fmt.Errorf("public key validation error")
+			} else if ok {
 				return permissionsExtensions(user), nil
 			}
-			return nil, fmt.Errorf("public key not authorized")
+			return nil, fmt.Errorf("invalid public key")
 		}
 	}
 }
@@ -530,7 +536,10 @@ func (s *Server) executeLFSAuthenticate(ctx context.Context, channel ssh.Channel
 	if s.tokenSignValidator != nil {
 		userInfo, _ := authenticate.GetUserInfo(ctx)
 		batchURL := href + "/objects/batch"
-		if token := s.tokenSignValidator.Sign(ctx, http.MethodPost, batchURL, userInfo.User, time.Hour); token != "" {
+		if token, err := s.tokenSignValidator.Sign(ctx, http.MethodPost, batchURL, userInfo.User, time.Hour); err != nil {
+			slog.ErrorContext(ctx, "ssh protocol: failed to sign LFS auth token", "error", err)
+			sendExitStatus(channel, 1)
+		} else if token != "" {
 			resp.Header["Authorization"] = "Bearer " + token
 		}
 	}

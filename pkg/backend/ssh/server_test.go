@@ -857,7 +857,7 @@ func TestSSHLFSAuthenticateWithAuthenticator(t *testing.T) {
 		// Validate the signed token can be verified and contains the right subject
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		batchURL := expectedHref + "/objects/batch"
-		user, _, valid := tokenSignValidator.Validate(context.Background(), http.MethodPost, batchURL, tokenStr)
+		user, _, valid, _ := tokenSignValidator.Validate(context.Background(), http.MethodPost, batchURL, tokenStr)
 		if !valid {
 			t.Fatal("Expected signed token to be valid")
 		}

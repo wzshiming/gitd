@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -200,7 +201,9 @@ func (h *Handler) lfsRepresent(ctx context.Context, rv *lfsRequestVars, download
 		link := rv.objectsLink()
 		header := map[string]string{"Accept": contentMediaType}
 		if h.tokenSignValidator != nil {
-			if token := h.tokenSignValidator.Sign(ctx, http.MethodGet, link, user.User, tokenExpiration); token != "" {
+			if token, err := h.tokenSignValidator.Sign(ctx, http.MethodGet, link, user.User, tokenExpiration); err != nil {
+				slog.WarnContext(ctx, "failed to sign token for LFS download link", "oid", rv.Oid, "error", err)
+			} else if token != "" {
 				header["Authorization"] = "Bearer " + token
 			}
 		} else if len(rv.Authorization) > 0 {
@@ -213,7 +216,9 @@ func (h *Handler) lfsRepresent(ctx context.Context, rv *lfsRequestVars, download
 		link := rv.objectsLink()
 		header := map[string]string{"Accept": contentMediaType}
 		if h.tokenSignValidator != nil {
-			if token := h.tokenSignValidator.Sign(ctx, http.MethodPut, link, user.User, tokenExpiration); token != "" {
+			if token, err := h.tokenSignValidator.Sign(ctx, http.MethodPut, link, user.User, tokenExpiration); err != nil {
+				slog.WarnContext(ctx, "failed to sign token for LFS upload link", "oid", rv.Oid, "error", err)
+			} else if token != "" {
 				header["Authorization"] = "Bearer " + token
 			}
 		} else if len(rv.Authorization) > 0 {
@@ -224,7 +229,9 @@ func (h *Handler) lfsRepresent(ctx context.Context, rv *lfsRequestVars, download
 		verifyHeader := make(map[string]string)
 		verifyLink := rv.verifyLink()
 		if h.tokenSignValidator != nil {
-			if token := h.tokenSignValidator.Sign(ctx, http.MethodPost, verifyLink, user.User, tokenExpiration); token != "" {
+			if token, err := h.tokenSignValidator.Sign(ctx, http.MethodPost, verifyLink, user.User, tokenExpiration); err != nil {
+				slog.WarnContext(ctx, "failed to sign token for LFS verify link", "oid", rv.Oid, "error", err)
+			} else if token != "" {
 				verifyHeader["Authorization"] = "Bearer " + token
 			}
 		} else if len(rv.Authorization) > 0 {
