@@ -36,20 +36,20 @@ func TestSyncMirrorRefs(t *testing.T) {
 		t.Fatalf("local refs: %v", err)
 	}
 
+	expected := make(map[string]string, len(refsToSync))
 	for _, ref := range refsToSync {
+		expected[ref] = remoteRefs[ref]
+	}
+
+	for ref, want := range expected {
 		if got, ok := localRefs[ref]; !ok {
 			t.Fatalf("expected %s to be fetched", ref)
-		} else if want := remoteRefs[ref]; got != want {
+		} else if got != want {
 			t.Fatalf("ref %s mismatch: got %s, want %s", ref, got, want)
 		}
 	}
-
-	if _, ok := localRefs["refs/heads/other"]; ok {
-		t.Fatalf("unexpected ref synced: refs/heads/other")
-	}
-
-	if _, err := os.Stat(filepath.Join(mirrorPath, "refs", "heads", "other")); err == nil {
-		t.Fatalf("unexpected ref file present for refs/heads/other")
+	if len(localRefs) != len(expected) {
+		t.Fatalf("unexpected refs present after sync: got %d, want %d (%v)", len(localRefs), len(expected), localRefs)
 	}
 
 	mainHash := localRefs["refs/heads/main"]
@@ -64,18 +64,19 @@ func TestSyncMirrorRefs(t *testing.T) {
 		t.Fatalf("pruned refs: %v", err)
 	}
 
-	if _, ok := prunedRefs["refs/heads/feature"]; ok {
-		t.Fatalf("expected refs/heads/feature to be pruned")
+	expectedAfterPrune := map[string]string{
+		"refs/heads/main": remoteRefs["refs/heads/main"],
+		"refs/tags/v1":    remoteRefs["refs/tags/v1"],
 	}
-	if _, ok := prunedRefs["refs/heads/stale"]; ok {
-		t.Fatalf("expected refs/heads/stale to be pruned")
+	for ref, want := range expectedAfterPrune {
+		if got, ok := prunedRefs[ref]; !ok {
+			t.Fatalf("expected %s to remain after prune", ref)
+		} else if got != want {
+			t.Fatalf("ref %s mismatch after prune: got %s, want %s", ref, got, want)
+		}
 	}
-
-	if got := prunedRefs["refs/heads/main"]; got != remoteRefs["refs/heads/main"] {
-		t.Fatalf("main ref mismatch after prune: got %s, want %s", got, remoteRefs["refs/heads/main"])
-	}
-	if got := prunedRefs["refs/tags/v1"]; got != remoteRefs["refs/tags/v1"] {
-		t.Fatalf("tag ref mismatch after prune: got %s, want %s", got, remoteRefs["refs/tags/v1"])
+	if len(prunedRefs) != len(expectedAfterPrune) {
+		t.Fatalf("unexpected refs present after prune: got %d, want %d (%v)", len(prunedRefs), len(expectedAfterPrune), prunedRefs)
 	}
 }
 
@@ -115,6 +116,16 @@ func setupMirrorSyncUpstream(t *testing.T, root string) string {
 	}
 	runGit(t, work, "commit", "-am", "other change")
 	runGit(t, work, "push", "-u", "origin", "other")
+
+	runGit(t, work, "checkout", "main")
+	runGit(t, work, "checkout", "-b", "noise/deep")
+	if err := os.WriteFile(filepath.Join(work, "file.txt"), []byte("noise\n"), 0o644); err != nil {
+		t.Fatalf("write noise file: %v", err)
+	}
+	runGit(t, work, "commit", "-am", "noise change")
+	runGit(t, work, "push", "-u", "origin", "noise/deep")
+	runGit(t, work, "tag", "v2")
+	runGit(t, work, "push", "origin", "v2")
 
 	return upstream
 }
