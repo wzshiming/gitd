@@ -109,7 +109,7 @@ func main() {
 	var lfsStorage = lfs.NewLocal(storage.LFSDir())
 	if s3Endpoint != "" && s3Bucket != "" {
 		if s3Repositories {
-			repositoriesDir := filepath.Join(absRootDir, "repositories")
+			repositoriesDir := storage.RepositoriesDir()
 			slog.InfoContext(ctx, "Mounting S3 bucket", "bucket", s3Bucket, "path", repositoriesDir)
 			err := s3fs.Mount(
 				context.Background(),
