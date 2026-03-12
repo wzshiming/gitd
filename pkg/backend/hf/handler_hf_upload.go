@@ -142,9 +142,7 @@ func (h *Handler) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		},
 	}, "")
 	if err != nil {
-		// Cleanup partially initialized repository so subsequent create
-		// attempts don't see an inconsistent repo as already existing.
-		_ = os.RemoveAll(repoPath)
+		_ = repo.Remove()
 		responseJSON(w, fmt.Errorf("failed to create initial commit: %v", err), http.StatusInternalServerError)
 		return
 	}
