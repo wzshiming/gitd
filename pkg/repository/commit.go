@@ -99,6 +99,25 @@ func (c *Commit) Title() string {
 	return title
 }
 
+// Diff returns the diff of the commit compared to its parent commit, or an empty string if this is the initial commit with no parents.
+func (c *Commit) Diff() (string, error) {
+	if c.commit.NumParents() == 0 {
+		return "", nil // No parents, so no diff
+	}
+
+	parent, err := c.commit.Parent(0)
+	if err != nil {
+		return "", fmt.Errorf("failed to get parent commit: %w", err)
+	}
+
+	patch, err := parent.Patch(c.commit)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate patch: %w", err)
+	}
+
+	return patch.String(), nil
+}
+
 // Signature represents the author or committer of a commit, including their name, email, and the time of the commit.
 type Signature struct {
 	signature object.Signature
