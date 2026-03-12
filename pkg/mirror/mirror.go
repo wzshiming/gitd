@@ -125,7 +125,11 @@ func (m *Mirror) OpenOrSync(ctx context.Context, repoPath, repoName string) (*re
 			return nil, repository.ErrRepositoryNotExists
 		}
 		defer m.markSynced(repoName)
-		return repo, m.syncMirror(ctx, repo, repoName, sourceURL)
+		err = m.syncMirror(ctx, repo, repoName, sourceURL)
+		if err != nil {
+			return nil, err
+		}
+		return repo, nil
 	})
 	if err != nil {
 		return nil, err
