@@ -19,7 +19,7 @@ type Handler struct {
 	root               *mux.Router
 	next               http.Handler
 	lfsStorage         lfs.Storage
-	locksStore         *lfs.LockDB
+	locksStorage       *lfs.LockStorage
 	permissionHookFunc permission.PermissionHookFunc
 	tokenSignValidator authenticate.TokenSignValidator
 	mirror             *mirror.Mirror
@@ -74,8 +74,8 @@ func WithMirror(m *mirror.Mirror) Option {
 // NewHandler creates a new Handler with the given repository directory.
 func NewHandler(opts ...Option) *Handler {
 	h := &Handler{
-		root:       mux.NewRouter(),
-		locksStore: lfs.NewLock(),
+		root:         mux.NewRouter(),
+		locksStorage: lfs.NewLock(),
 	}
 
 	for _, opt := range opts {

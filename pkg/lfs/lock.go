@@ -13,20 +13,20 @@ var (
 	errNoBucket = errors.New("bucket not found")
 )
 
-// LockDB implements a metadata storage. It stores user credentials and Meta information
+// LockStorage implements a metadata storage. It stores user credentials and Meta information
 // for objects. The storage is handled by boltdb.
-type LockDB struct {
+type LockStorage struct {
 	m   map[string][]Lock
 	mut sync.RWMutex
 }
 
 // NewLock creates a new MetaStore using the boltdb database at dbFile.
-func NewLock() *LockDB {
-	return &LockDB{}
+func NewLock() *LockStorage {
+	return &LockStorage{}
 }
 
 // Add write locks to the storage for the repo.
-func (s *LockDB) Add(repo string, l ...Lock) error {
+func (s *LockStorage) Add(repo string, l ...Lock) error {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
@@ -43,7 +43,7 @@ func (s *LockDB) Add(repo string, l ...Lock) error {
 }
 
 // List retrieves locks for the repo from the store
-func (s *LockDB) List(repo string) ([]Lock, error) {
+func (s *LockStorage) List(repo string) ([]Lock, error) {
 	s.mut.RLock()
 	defer s.mut.RUnlock()
 
@@ -55,7 +55,7 @@ func (s *LockDB) List(repo string) ([]Lock, error) {
 }
 
 // Filtered return filtered locks for the repo
-func (s *LockDB) Filtered(repo, path, cursor string, limit int) (locks []Lock, next string, err error) {
+func (s *LockStorage) Filtered(repo, path, cursor string, limit int) (locks []Lock, next string, err error) {
 	locks, err = s.List(repo)
 	if err != nil {
 		return
@@ -101,7 +101,7 @@ func (s *LockDB) Filtered(repo, path, cursor string, limit int) (locks []Lock, n
 }
 
 // Delete removes lock for the repo by id from the store
-func (s *LockDB) Delete(repo, user, id string, force bool) (*Lock, error) {
+func (s *LockStorage) Delete(repo, user, id string, force bool) (*Lock, error) {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
