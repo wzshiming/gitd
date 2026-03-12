@@ -50,7 +50,7 @@ func NewS3(basePath, endpoint, accessKey, secretKey, bucket string, forcePathSty
 		s3:                s3.New(sess),
 		signS3:            s3.New(signSess),
 		bucket:            bucket,
-		expire:            15 * time.Minute,
+		expire:            60 * time.Minute,
 		checksumAlgorithm: "SHA256",
 	}
 }
